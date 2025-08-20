@@ -1,6 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { CreateSegmentModal } from "@/components/Modals/CreateSegmentModal"
 import { 
   Users, 
   Plus, 
@@ -10,6 +11,7 @@ import {
   ShoppingBag,
   Target
 } from "lucide-react"
+import { useState } from "react"
 
 const segments = [
   {
@@ -78,6 +80,8 @@ const segmentTemplates = [
 ]
 
 export default function Segments() {
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -88,7 +92,10 @@ export default function Segments() {
             Create targeted user groups for personalized campaigns
           </p>
         </div>
-        <Button className="bg-gradient-primary hover:opacity-90 text-white shadow-glow">
+        <Button 
+          className="bg-gradient-primary hover:opacity-90 text-white shadow-glow"
+          onClick={() => setShowCreateModal(true)}
+        >
           <Plus className="w-4 h-4 mr-2" />
           Create Segment
         </Button>
@@ -186,11 +193,16 @@ export default function Segments() {
           <p className="text-muted-foreground mb-6 max-w-md mx-auto">
             Use our intuitive segment builder to create targeted user groups based on behavior, demographics, and more.
           </p>
-          <Button className="bg-gradient-primary hover:opacity-90 text-white shadow-glow">
+          <Button 
+            className="bg-gradient-primary hover:opacity-90 text-white shadow-glow"
+            onClick={() => setShowCreateModal(true)}
+          >
             Start Building
           </Button>
         </CardContent>
       </Card>
+
+      <CreateSegmentModal open={showCreateModal} onOpenChange={setShowCreateModal} />
     </div>
   )
 }

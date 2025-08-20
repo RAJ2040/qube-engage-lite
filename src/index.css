@@ -17,13 +17,13 @@
     --popover: 0 0% 100%;
     --popover-foreground: 221 39% 11%;
 
-    /* Brand Purple-Blue Gradient System */
-    --primary: 262 52% 47%; /* purple-600 */
+    /* Light Green Theme System */
+    --primary: 122 39% 49%; /* green-600 */
     --primary-foreground: 0 0% 100%;
-    --primary-glow: 262 83% 58%; /* purple-500 */
+    --primary-glow: 120 45% 45%; /* green-500 */
     
     /* Gradient Definitions */
-    --gradient-primary: linear-gradient(135deg, hsl(262 83% 58%), hsl(217 91% 60%)); /* purple-500 to blue-500 */
+    --gradient-primary: linear-gradient(135deg, hsl(122 39% 49%), hsl(120 45% 45%)); /* green gradient */
     --gradient-surface: linear-gradient(180deg, hsl(0 0% 100%), hsl(248 250 252 / 0.8));
     --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(248 250 252));
 
@@ -36,7 +36,7 @@
     --muted-foreground: 215 25% 27%; /* slate-600 */
 
     /* Accent Colors */
-    --accent: 262 83% 58%; /* purple-500 */
+    --accent: 122 39% 49%; /* green-600 */
     --accent-foreground: 0 0% 100%;
 
     /* Status Colors */
@@ -50,7 +50,7 @@
     /* UI Elements */
     --border: 214 32% 91%; /* slate-200 */
     --input: 214 32% 91%;
-    --ring: 262 52% 47%;
+    --ring: 122 39% 49%;
 
     /* Shadows */
     --shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.05);
@@ -88,9 +88,9 @@
     --popover: 15 23% 6%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 262 83% 58%;
-    --primary-foreground: 15 23% 4%;
-    --primary-glow: 262 83% 68%;
+    --primary: 122 39% 49%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 120 45% 45%;
 
     --secondary: 217 33% 17%;
     --secondary-foreground: 210 40% 98%;
@@ -98,7 +98,7 @@
     --muted: 217 33% 15%;
     --muted-foreground: 215 20% 65%;
 
-    --accent: 262 83% 58%;
+    --accent: 122 39% 49%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 63% 31%;
@@ -106,7 +106,7 @@
 
     --border: 217 33% 17%;
     --input: 217 33% 17%;
-    --ring: 262 83% 58%;
+    --ring: 122 39% 49%;
 
     --sidebar-background: 15 23% 4%;
     --sidebar-foreground: 210 40% 98%;

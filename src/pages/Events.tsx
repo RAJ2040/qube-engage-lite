@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { CreateEventModal } from "@/components/Modals/CreateEventModal"
 import { 
   Search, 
   Filter, 
@@ -62,6 +63,7 @@ const recentEvents = [
 
 export default function Events() {
   const [searchTerm, setSearchTerm] = useState("")
+  const [showCreateModal, setShowCreateModal] = useState(false)
 
   return (
     <div className="space-y-6">
@@ -73,7 +75,10 @@ export default function Events() {
             Monitor real-time user activities and track important actions
           </p>
         </div>
-        <Button className="bg-gradient-primary hover:opacity-90 text-white shadow-glow">
+        <Button 
+          className="bg-gradient-primary hover:opacity-90 text-white shadow-glow"
+          onClick={() => setShowCreateModal(true)}
+        >
           <Zap className="w-4 h-4 mr-2" />
           Send Test Event
         </Button>
@@ -156,6 +161,8 @@ export default function Events() {
           </div>
         </CardContent>
       </Card>
+
+      <CreateEventModal open={showCreateModal} onOpenChange={setShowCreateModal} />
     </div>
   )
 }

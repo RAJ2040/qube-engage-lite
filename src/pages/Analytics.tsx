@@ -1,6 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { DateRangeFilter } from "@/components/DateRangeFilter"
 import { 
   BarChart3, 
   TrendingUp,
@@ -13,6 +14,7 @@ import {
   Download
 } from "lucide-react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { useState } from "react"
 
 const campaignPerformanceData = [
   { name: 'Email', sent: 12450, opened: 6225, clicked: 934 },
@@ -22,9 +24,9 @@ const campaignPerformanceData = [
 ]
 
 const engagementData = [
-  { name: 'High Engagement', value: 35, color: 'hsl(262 83% 58%)' },
-  { name: 'Medium Engagement', value: 45, color: 'hsl(217 91% 60%)' },
-  { name: 'Low Engagement', value: 20, color: 'hsl(38 92% 50%)' }
+  { name: 'High Engagement', value: 35, color: '#4CAF50' },
+  { name: 'Medium Engagement', value: 45, color: '#66BB6A' },
+  { name: 'Low Engagement', value: 20, color: '#FFC107' }
 ]
 
 const monthlyTrends = [
@@ -53,6 +55,14 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 }
 
 export default function Analytics() {
+  const [selectedDateRange, setSelectedDateRange] = useState("last-7-days")
+
+  const handleFilterChange = (range: string, startDate?: Date, endDate?: Date) => {
+    setSelectedDateRange(range)
+    console.log("Filter changed:", { range, startDate, endDate })
+    // In a real app, this would trigger API calls to refresh chart data
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -63,11 +73,8 @@ export default function Analytics() {
             Track performance and gain insights into your marketing campaigns
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline">
-            <Calendar className="w-4 h-4 mr-2" />
-            Last 30 Days
-          </Button>
+        <div className="flex items-center gap-4">
+          <DateRangeFilter onFilterChange={handleFilterChange} />
           <Button variant="outline">
             <Download className="w-4 h-4 mr-2" />
             Export
@@ -171,9 +178,9 @@ export default function Analytics() {
                 <XAxis dataKey="name" />
                 <YAxis />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="sent" fill="hsl(262 83% 58%)" name="Sent" />
-                <Bar dataKey="opened" fill="hsl(217 91% 60%)" name="Opened" />
-                <Bar dataKey="clicked" fill="hsl(142 71% 45%)" name="Clicked" />
+                <Bar dataKey="sent" fill="#4CAF50" name="Sent" />
+                <Bar dataKey="opened" fill="#66BB6A" name="Opened" />
+                <Bar dataKey="clicked" fill="#388E3C" name="Clicked" />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>

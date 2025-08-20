@@ -1,6 +1,8 @@
+import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { CreateCampaignModal } from "@/components/Modals/CreateCampaignModal"
 import { 
   MessageSquare, 
   Plus, 
@@ -106,6 +108,8 @@ const getTypeIcon = (type: string) => {
 }
 
 export default function Campaigns() {
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -116,7 +120,10 @@ export default function Campaigns() {
             Create and manage multi-channel marketing campaigns
           </p>
         </div>
-        <Button className="bg-gradient-primary hover:opacity-90 text-white shadow-glow">
+        <Button 
+          className="bg-gradient-primary hover:opacity-90 text-white shadow-glow"
+          onClick={() => setShowCreateModal(true)}
+        >
           <Plus className="w-4 h-4 mr-2" />
           Create Campaign
         </Button>
@@ -275,6 +282,8 @@ export default function Campaigns() {
           </div>
         </CardContent>
       </Card>
+
+      <CreateCampaignModal open={showCreateModal} onOpenChange={setShowCreateModal} />
     </div>
   )
 }
