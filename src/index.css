@@ -7,7 +7,7 @@
 @layer base {
   :root {
     /* Core Brand Colors */
-    --background: 248 250 252; /* slate-50 */
+    --background: 210 40% 98%; /* slate-50 */
     --foreground: 221 39% 11%; /* slate-900 */
 
     /* Surface Colors */
@@ -24,8 +24,8 @@
     
     /* Gradient Definitions */
     --gradient-primary: linear-gradient(135deg, hsl(122 39% 49%), hsl(120 45% 45%)); /* green gradient */
-    --gradient-surface: linear-gradient(180deg, hsl(0 0% 100%), hsl(248 250 252 / 0.8));
-    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(248 250 252));
+    --gradient-surface: linear-gradient(180deg, hsl(0 0% 100%), hsl(210 40% 96% / 0.8));
+    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(210 40% 98%));
 
     /* Secondary Colors */
     --secondary: 210 40% 96%;
@@ -141,6 +141,11 @@
   
   .bg-gradient-card {
     background: var(--gradient-card);
+  }
+
+  /* Subtle page background gradient */
+  .bg-gradient-subtle {
+    background: linear-gradient(180deg, hsl(var(--background)), hsl(210 40% 96%));
   }
 
   /* Animation Classes */
