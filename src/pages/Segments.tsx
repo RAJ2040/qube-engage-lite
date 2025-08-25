@@ -11,46 +11,10 @@ import {
   ShoppingBag,
   Target
 } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { fetchSegments, type SegmentItem, type SegmentsPayload } from "@/lib/api"
 
-const segments = [
-  {
-    id: 1,
-    name: "High-Value Customers",
-    description: "Users who have spent over $500 in the last 3 months",
-    count: 1247,
-    criteria: ["Purchase amount > $500", "Time period: 3 months", "Status: Active"],
-    color: "purple",
-    lastUpdated: "2 hours ago"
-  },
-  {
-    id: 2,
-    name: "Cart Abandoners",
-    description: "Users who added items to cart but didn't complete purchase",
-    count: 3891,
-    criteria: ["Cart created", "No purchase in 24h", "Email verified"],
-    color: "orange",
-    lastUpdated: "1 day ago"
-  },
-  {
-    id: 3,
-    name: "New York Users",
-    description: "Active users located in New York metropolitan area",
-    count: 892,
-    criteria: ["Location: New York", "Last active: 7 days", "App usage > 5min"],
-    color: "blue",
-    lastUpdated: "3 hours ago"
-  },
-  {
-    id: 4,
-    name: "Trial Users",
-    description: "Users currently on free trial, eligible for conversion",
-    count: 456,
-    criteria: ["Plan: Trial", "Trial days left < 7", "Feature usage > 50%"],
-    color: "green",
-    lastUpdated: "30 minutes ago"
-  }
-]
+// Server-driven segments will populate below
 
 const segmentTemplates = [
   {
@@ -81,6 +45,40 @@ const segmentTemplates = [
 
 export default function Segments() {
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [items, setItems] = useState<SegmentItem[]>([])
+  const [page, setPage] = useState<number>(1)
+  const [limit] = useState<number>(10)
+  const [totalPages, setTotalPages] = useState<number>(1)
+  const [loading, setLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isMounted = true
+    setLoading(true)
+    setError(null)
+    fetchSegments({ page, limit })
+      .then((res) => {
+        if (!isMounted) return
+        const payload: SegmentsPayload = res.data
+        setItems(payload.items || [])
+        setTotalPages(payload.totalPages || 1)
+      })
+      .catch((err: unknown) => {
+        if (!isMounted) return
+        setError(err instanceof Error ? err.message : "Failed to load segments")
+        setItems([])
+      })
+      .finally(() => {
+        if (!isMounted) return
+        setLoading(false)
+      })
+    return () => {
+      isMounted = false
+    }
+  }, [page, limit])
+
+  const canPrev = useMemo(() => page > 1, [page])
+  const canNext = useMemo(() => page < totalPages, [page, totalPages])
   
   return (
     <div className="space-y-6">
@@ -131,55 +129,67 @@ export default function Segments() {
                 Manage and monitor your customer segments
               </CardDescription>
             </div>
-            <Button variant="outline">
-              <Filter className="w-4 h-4 mr-2" />
-              Filter
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline">
+                <Filter className="w-4 h-4 mr-2" />
+                Filter
+              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" disabled={!canPrev || loading} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                  Prev
+                </Button>
+                <div className="text-sm text-muted-foreground">
+                  Page {page} / {Math.max(totalPages, 1)}
+                </div>
+                <Button variant="outline" disabled={!canNext || loading} onClick={() => setPage((p) => p + 1)}>
+                  Next
+                </Button>
+              </div>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {segments.map((segment) => (
-              <Card key={segment.id} className="hover-lift cursor-pointer">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg font-semibold text-foreground">{segment.name}</h3>
-                        <Badge variant="outline" className="bg-gradient-primary text-white border-0">
-                          <Users className="w-3 h-3 mr-1" />
-                          {segment.count.toLocaleString()}
-                        </Badge>
+          {loading ? (
+            <div className="text-sm text-muted-foreground py-4">Loading segments…</div>
+          ) : error ? (
+            <div className="text-sm text-red-600 py-4">{error}</div>
+          ) : items.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-4">No segments found.</div>
+          ) : (
+            <div className="space-y-4">
+              {items.map((segment) => (
+                <Card key={segment.id} className="hover-lift cursor-pointer">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="text-lg font-semibold text-foreground">{segment.name}</h3>
+                          {segment.status ? (
+                            <Badge variant="outline" className="bg-gradient-primary text-white border-0">
+                              <Users className="w-3 h-3 mr-1" />
+                              {segment.status}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <p className="text-muted-foreground mb-4">{segment.description || ""}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Ref: {segment.referenceId} • {segment.updatedAt ? new Date(segment.updatedAt).toLocaleString() : ""}
+                        </p>
                       </div>
-                      
-                      <p className="text-muted-foreground mb-4">{segment.description}</p>
-                      
-                      <div className="flex flex-wrap gap-2 mb-3">
-                        {segment.criteria.map((criterion, index) => (
-                          <Badge key={index} variant="secondary" className="text-xs">
-                            {criterion}
-                          </Badge>
-                        ))}
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm">
+                          Edit
+                        </Button>
+                        <Button variant="outline" size="sm">
+                          Export
+                        </Button>
                       </div>
-                      
-                      <p className="text-xs text-muted-foreground">
-                        Last updated: {segment.lastUpdated}
-                      </p>
                     </div>
-                    
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm">
-                        Edit
-                      </Button>
-                      <Button variant="outline" size="sm">
-                        Export
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
