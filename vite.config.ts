@@ -14,6 +14,11 @@ export default defineConfig(({ mode }) => ({
         changeOrigin: true,
         secure: false,
       },
+      "/api": {
+        target: "http://34.93.100.199:5050",
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
   plugins: [
