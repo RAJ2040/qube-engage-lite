@@ -33,12 +33,13 @@ const mockUsers = [
 
 export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalProps) {
   const [segmentName, setSegmentName] = useState("")
-  const [filters, setFilters] = useState<Array<{ id: string; field: string; operator: string; value: string }>>([])
+  const [filters, setFilters] = useState<Array<{ id: string; entity: "Users" | "Events"; field: string; operator: string; value: string }>>([])
   const { toast } = useToast()
 
   const addFilter = () => {
     const newFilter = {
       id: Date.now().toString(),
+      entity: "Users" as const,
       field: "",
       operator: "equals",
       value: ""
@@ -97,18 +98,36 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
               <Card key={filter.id}>
                 <CardContent className="p-4">
                   <div className="flex items-center gap-4">
-                    <Select value={filter.field} onValueChange={(value) => updateFilter(filter.id, "field", value)}>
-                      <SelectTrigger className="w-48">
-                        <SelectValue placeholder="Select field" />
+                    <Select value={filter.entity} onValueChange={(value) => {
+                      // When switching to Users, clear field selection
+                      if (value === "Users") {
+                        setFilters(filters.map(f => f.id === filter.id ? { ...f, entity: "Users", field: "" } : f))
+                      } else {
+                        updateFilter(filter.id, "entity", value)
+                      }
+                    }}>
+                      <SelectTrigger className="w-36">
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {filterOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="Users">Users</SelectItem>
+                        <SelectItem value="Events">Events</SelectItem>
                       </SelectContent>
                     </Select>
+                    {filter.entity === "Events" && (
+                      <Select value={filter.field} onValueChange={(value) => updateFilter(filter.id, "field", value)}>
+                        <SelectTrigger className="w-48">
+                          <SelectValue placeholder="Select field" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {filterOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
 
                     <Select value={filter.operator} onValueChange={(value) => updateFilter(filter.id, "operator", value)}>
                       <SelectTrigger className="w-32">
@@ -123,7 +142,7 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
                       </SelectContent>
                     </Select>
 
-                    {filter.field && filterOptions.find(opt => opt.value === filter.field)?.type === "select" ? (
+                    {filter.entity === "Events" && filter.field && filterOptions.find(opt => opt.value === filter.field)?.type === "select" ? (
                       <Select value={filter.value} onValueChange={(value) => updateFilter(filter.id, "value", value)}>
                         <SelectTrigger className="flex-1">
                           <SelectValue placeholder="Select value" />

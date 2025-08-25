@@ -4,10 +4,9 @@ export interface ApiResponse<T> {
 	message?: string
 }
 
-// In dev, requests go to "/api" which Vite proxies to the ngrok backend.
-// In prod, set VITE_API_BASE_URL to your backend domain.
+// Set VITE_API_BASE_URL to your backend domain.
 export const API_BASE_URL = (
-	(import.meta as any).env?.VITE_API_BASE_URL ?? "/api"
+	(import.meta as any).env?.VITE_API_BASE_URL ?? ""
 ) as string
 
 async function httpGet<T>(path: string, init?: RequestInit): Promise<T> {
@@ -20,8 +19,6 @@ async function httpGet<T>(path: string, init?: RequestInit): Promise<T> {
 			headers: {
 				"Content-Type": "application/json",
 				Accept: "application/json",
-				// Required to bypass ngrok browser warning page (HTML)
-				"ngrok-skip-browser-warning": "true",
 			},
 			signal: controller.signal,
 			...init,
@@ -86,4 +83,36 @@ export function fetchEvents(params?: {
 	return httpGet<ApiResponse<EventsPayload>>(`/app/events${qs ? `?${qs}` : ""}`)
 }
 
+
+// Segments API
+export interface SegmentItem {
+    id: number
+    referenceId: string
+    name: string
+    description?: string
+    filters?: string
+    status?: string
+    isActive?: number
+    createdAt?: number
+    updatedAt?: number
+}
+
+export interface SegmentsPayload {
+    items: SegmentItem[]
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+}
+
+export function fetchSegments(params?: {
+    page?: number
+    limit?: number
+}) {
+    const search = new URLSearchParams()
+    if (params?.page) search.set("page", String(params.page))
+    if (params?.limit) search.set("limit", String(params.limit))
+    const qs = search.toString()
+    return httpGet<ApiResponse<SegmentsPayload>>(`/app/segments${qs ? `?${qs}` : ""}`)
+}
 

@@ -9,11 +9,10 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
     proxy: {
-      "/api": {
-        target: "https://0e4ff31f4bc1.ngrok-free.app",
+      "/app": {
+        target: "http://34.93.100.199:5050",
         changeOrigin: true,
         secure: false,
-        rewrite: (path) => path.replace(/^\/api/, ""),
       },
     },
   },
