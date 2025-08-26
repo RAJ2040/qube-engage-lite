@@ -46,7 +46,7 @@ async function httpGet<T>(path: string, init?: RequestInit): Promise<T> {
 
 async function httpPost<T, B = unknown>(path: string, body: B, init?: RequestInit): Promise<T> {
 	const controller = new AbortController()
-	const timeout = setTimeout(() => controller.abort(), 15000)
+	const timeout = setTimeout(() => controller.abort(), 20000)
 
 	try {
 		const res = await fetch(`${API_BASE_URL}${path}`, {
@@ -282,5 +282,131 @@ export function fetchTemplateIds() {
     return httpGet<ApiResponse<TemplateIdItem[]>>(`/api/engagements/messages/templates/ids`, {
         headers: { Accept: "application/json" },
     })
+}
+
+// Catalogs and Operators
+export interface UserPropsCatalogPayload {
+	base_schema: Record<string, "string" | "number" | "date" | "bool">,
+	properties_schema: Record<string, "string" | "number" | "date" | "bool">,
+	updated_at: number
+}
+
+export function fetchUserPropsCatalog() {
+	return httpGet<ApiResponse<UserPropsCatalogPayload>>(`/app/events/catalog/user_props`)
+}
+
+export interface EventsCatalogItem {
+	event_name: string
+	updated_at: number
+	properties_schema: Record<string, "string" | "number" | "date" | "bool">
+	samples?: Record<string, unknown[]>
+}
+
+export interface EventsCatalogPayload {
+	items: EventsCatalogItem[]
+	total: number
+}
+
+export function fetchEventsCatalog() {
+	return httpGet<ApiResponse<EventsCatalogPayload>>(`/app/events/catalog`)
+}
+
+export interface EventCatalogDetailsPayload {
+	_id: string
+	properties_schema: Record<string, "string" | "number" | "date" | "bool">
+	updated_at: number
+}
+
+export function fetchEventCatalogDetails(eventName: string) {
+	// The backend expects raw name, ensure it's properly encoded when used in URL
+	return httpGet<ApiResponse<EventCatalogDetailsPayload>>(`/app/events/catalog/${encodeURIComponent(eventName)}`)
+}
+
+export type OperatorType = "eq" | "in" | "regex" | "exists" | "gte" | "lte" | "between"
+
+export interface OperatorsCatalogPayload {
+	string: OperatorType[]
+	number: OperatorType[]
+	date: OperatorType[]
+	bool: OperatorType[]
+}
+
+export function fetchOperatorsCatalog() {
+	return httpGet<ApiResponse<OperatorsCatalogPayload>>(`/app/events/catalog/operators`, {
+		headers: { Accept: "application/json" },
+	})
+}
+
+// Segment definition, preview, and create
+export interface SegmentEventFilter {
+	name: string
+	userId?: string
+	prop?: Record<string, unknown>
+	eventTime?: { start?: string; end?: string }
+}
+
+export interface SegmentDefinition {
+	criteria?: Record<string, unknown>
+	anyOfEvents?: Array<{ event: SegmentEventFilter }>
+}
+
+export interface SegmentsPreviewRequest {
+	definition: SegmentDefinition
+	page?: number
+	limit?: number
+	sortBy?: string
+	sortDir?: "asc" | "desc"
+}
+
+export interface SegmentsPreviewItem {
+	_id?: unknown
+	user_id?: string
+	email?: string
+	name?: string
+	age?: number
+	gender?: string
+	login_date?: number
+	company_name?: string
+	event_time?: number
+	phone_number?: string
+	properties?: Record<string, unknown>
+	created_at?: number
+	updated_at?: number
+}
+
+export interface SegmentsPreviewPayload {
+	items: SegmentsPreviewItem[]
+	page: number
+	limit: number
+	total: number
+	totalPages: number
+	sortBy?: string
+	sortDir?: string
+}
+
+export function previewSegment(body: SegmentsPreviewRequest) {
+	return httpPost<ApiResponse<SegmentsPreviewPayload>>(`/app/segments/preview`, body)
+}
+
+export interface CreateSegmentRequest {
+	name: string
+	description?: string
+	status?: string
+	is_active?: number
+	definition: SegmentDefinition
+}
+
+export interface CreateSegmentResponse {
+	id?: number | string
+	referenceId?: string
+	name: string
+	status?: string
+	isActive?: number
+	createdAt?: number
+	updatedAt?: number
+}
+
+export function createSegment(body: CreateSegmentRequest) {
+	return httpPost<ApiResponse<CreateSegmentResponse>>(`/app/segments`, body)
 }
 
