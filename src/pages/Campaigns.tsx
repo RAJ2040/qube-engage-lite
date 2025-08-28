@@ -1,8 +1,9 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { CreateCampaignModal } from "@/components/Modals/CreateCampaignModal"
+import { fetchCampaignByRef, fetchCampaigns, type CampaignListItem } from "@/lib/api"
 import { 
   MessageSquare, 
   Plus, 
@@ -25,7 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-const campaigns = [
+const campaignsStatic = [
   {
     id: 1,
     name: "Welcome Email Series",
@@ -109,6 +110,31 @@ const getTypeIcon = (type: string) => {
 
 export default function Campaigns() {
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [editRefId, setEditRefId] = useState<string | null>(null)
+  const [editInitial, setEditInitial] = useState<any | null>(null)
+  const [items, setItems] = useState<CampaignListItem[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isMounted = true
+    setLoading(true)
+    setError(null)
+    fetchCampaigns({ page: 1, limit: 20 })
+      .then((res) => {
+        if (!isMounted) return
+        setItems(res.data.items || [])
+      })
+      .catch((err) => {
+        if (!isMounted) return
+        setError(err instanceof Error ? err.message : "Failed to load campaigns")
+      })
+      .finally(() => {
+        if (!isMounted) return
+        setLoading(false)
+      })
+    return () => { isMounted = false }
+  }, [])
   
   return (
     <div className="space-y-6">
@@ -171,10 +197,11 @@ export default function Campaigns() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {campaigns.map((campaign) => {
-              const TypeIcon = getTypeIcon(campaign.type)
+            {(items.length ? items : campaignsStatic).map((campaign: any) => {
+              const displayType = campaign.type || campaign.channelName || "Push"
+              const TypeIcon = getTypeIcon(displayType)
               return (
-                <Card key={campaign.id} className="hover-lift">
+                <Card key={campaign.id ?? campaign.referenceId} className="hover-lift">
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-4 flex-1">
@@ -185,10 +212,10 @@ export default function Campaigns() {
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
                             <h3 className="text-lg font-semibold text-foreground">{campaign.name}</h3>
-                            {getStatusBadge(campaign.status)}
+                            {getStatusBadge(campaign.status ?? "Draft")}
                             <Badge variant="outline">
                               <Users className="w-3 h-3 mr-1" />
-                              {campaign.segment}
+                              {campaign.segment ?? campaign.segmentId ?? "Segment"}
                             </Badge>
                           </div>
                           
@@ -199,7 +226,7 @@ export default function Campaigns() {
                                 Sent
                               </div>
                               <div className="text-lg font-semibold text-foreground">
-                                {campaign.sent.toLocaleString()}
+                                {(campaign.sent ?? 0).toLocaleString()}
                               </div>
                             </div>
                             
@@ -209,11 +236,11 @@ export default function Campaigns() {
                                 Opened
                               </div>
                               <div className="text-lg font-semibold text-foreground">
-                                {campaign.opened.toLocaleString()}
+                                {(campaign.opened ?? 0).toLocaleString()}
                               </div>
-                              {campaign.sent > 0 && (
+                              {(campaign.sent ?? 0) > 0 && (
                                 <div className="text-xs text-muted-foreground">
-                                  {((campaign.opened / campaign.sent) * 100).toFixed(1)}%
+                                  {(((campaign.opened ?? 0) / (campaign.sent ?? 1)) * 100).toFixed(1)}%
                                 </div>
                               )}
                             </div>
@@ -224,20 +251,20 @@ export default function Campaigns() {
                                 Clicked
                               </div>
                               <div className="text-lg font-semibold text-foreground">
-                                {campaign.clicked.toLocaleString()}
+                                {(campaign.clicked ?? 0).toLocaleString()}
                               </div>
-                              {campaign.opened > 0 && (
+                              {(campaign.opened ?? 0) > 0 && (
                                 <div className="text-xs text-muted-foreground">
-                                  {((campaign.clicked / campaign.opened) * 100).toFixed(1)}%
+                                  {(((campaign.clicked ?? 0) / (campaign.opened ?? 1)) * 100).toFixed(1)}%
                                 </div>
                               )}
                             </div>
                             
                             <div className="text-center">
                               <div className="text-sm text-muted-foreground mb-1">Status</div>
-                              <div className="text-sm font-medium text-foreground">{campaign.scheduled}</div>
+                              <div className="text-sm font-medium text-foreground">{campaign.scheduled ?? campaign.scheduleType ?? "-"}</div>
                               <div className="text-xs text-muted-foreground">
-                                Last: {campaign.lastSent}
+                                Last: {campaign.lastSent ?? "-"}
                               </div>
                             </div>
                           </div>
@@ -265,7 +292,25 @@ export default function Campaigns() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem>Edit Campaign</DropdownMenuItem>
+                            <DropdownMenuItem onClick={async () => {
+                              try {
+                                const res = await fetchCampaignByRef(campaign.referenceId)
+                                const d = res.data
+                                setEditInitial({
+                                  name: d.name,
+                                  description: d.description,
+                                  channel: d.channelName,
+                                  segmentName: d.segmentId,
+                                  segmentRefId: d.segmentId,
+                                  templateName: d.messageTemplateId,
+                                  templateId: d.messageTemplateId,
+                                  templateBody: "",
+                                })
+                                setEditRefId(campaign.referenceId)
+                              } catch {
+                                setEditRefId(campaign.referenceId)
+                              }
+                            }}>Edit Campaign</DropdownMenuItem>
                             <DropdownMenuItem>Duplicate</DropdownMenuItem>
                             <DropdownMenuItem>View Analytics</DropdownMenuItem>
                             <DropdownMenuItem className="text-destructive">
@@ -284,6 +329,15 @@ export default function Campaigns() {
       </Card>
 
       <CreateCampaignModal open={showCreateModal} onOpenChange={setShowCreateModal} />
+      {editRefId && (
+        <CreateCampaignModal
+          open={!!editRefId}
+          onOpenChange={(o) => { if (!o) setEditRefId(null) }}
+          mode="edit"
+          referenceId={editRefId}
+          initial={editInitial ?? {}}
+        />
+      )}
     </div>
   )
 }

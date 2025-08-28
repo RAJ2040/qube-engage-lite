@@ -206,9 +206,9 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
         definition,
       })
       toast({ title: "Segment Created Successfully", description: `${segmentName} has been saved.` })
-      onOpenChange(false)
-      setSegmentName("")
-      setFilters([])
+    onOpenChange(false)
+    setSegmentName("")
+    setFilters([])
       setPreviewItems([])
     } catch (err) {
       toast({ title: "Create failed", description: err instanceof Error ? err.message : String(err) })
@@ -305,28 +305,28 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
                               }}>
                                 <SelectTrigger className="w-56">
                                   <SelectValue placeholder="Select property" />
-                                </SelectTrigger>
-                                <SelectContent>
+                      </SelectTrigger>
+                      <SelectContent>
                                   {getEventFields(filter.eventName).map((f) => (
                                     <SelectItem key={f.key} value={f.key}>{prettify(f.key)}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                        ))}
+                      </SelectContent>
+                    </Select>
                               <Select value={p.operator} onValueChange={(value) => {
                                 setFilters(filters.map(f => f.id === filter.id ? {
                                   ...f,
                                   props: (f.props ?? []).map(x => x.id === p.id ? { ...x, operator: value } : x)
                                 } : f))
                               }}>
-                                <SelectTrigger className="w-32">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
+                      <SelectTrigger className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
                                   {applicableOperators(p.fieldType).map((op) => (
                                     <SelectItem key={op} value={op}>{op}</SelectItem>
                                   ))}
-                                </SelectContent>
-                              </Select>
+                      </SelectContent>
+                    </Select>
                               {/* Value control: hide for exists; show compact. If samples available and op eq/in, use a Select. */}
                               {p.operator !== "exists" && (
                                 (() => {
@@ -340,9 +340,9 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
                                         } : f))
                                       }}>
                                         <SelectTrigger className="w-40">
-                                          <SelectValue placeholder="Select value" />
-                                        </SelectTrigger>
-                                        <SelectContent>
+                          <SelectValue placeholder="Select value" />
+                        </SelectTrigger>
+                        <SelectContent>
                                           {sampleValues.map((sv) => (
                                             <SelectItem key={sv} value={sv}>{sv}</SelectItem>
                                           ))}
@@ -421,16 +421,16 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
                           <SelectContent>
                             {applicableOperators(filter.fieldType).map((op) => (
                               <SelectItem key={op} value={op}>{op}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          ))}
+                        </SelectContent>
+                      </Select>
                         {filter.operator !== "exists" && (
-                          <Input
+                      <Input
                             placeholder={filter.operator === "in" ? "Comma-separated" : "Enter value"}
-                            value={filter.value}
-                            onChange={(e) => updateFilter(filter.id, "value", e.target.value)}
+                        value={filter.value}
+                        onChange={(e) => updateFilter(filter.id, "value", e.target.value)}
                             className="w-40"
-                          />
+                      />
                         )}
                       </>
                     )}

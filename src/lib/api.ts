@@ -79,6 +79,41 @@ async function httpPost<T, B = unknown>(path: string, body: B, init?: RequestIni
 	}
 }
 
+async function httpPatch<T, B = unknown>(path: string, body: B, init?: RequestInit): Promise<T> {
+	const controller = new AbortController()
+	const timeout = setTimeout(() => controller.abort(), 20000)
+
+	try {
+		const res = await fetch(`${API_BASE_URL}${path}`, {
+			method: "PATCH",
+			headers: {
+				"Content-Type": "application/json",
+				Accept: "application/json",
+			},
+			body: JSON.stringify(body ?? {}),
+			signal: controller.signal,
+			...init,
+		})
+
+		const contentType = res.headers.get("content-type") || ""
+		if (!res.ok) {
+			const text = await res.text().catch(() => "")
+			throw new Error(`Request failed (${res.status}): ${text.slice(0, 200) || res.statusText}`)
+		}
+
+		if (!contentType.includes("application/json")) {
+			const text = await res.text().catch(() => "")
+			throw new Error(
+				`Expected JSON but received '${contentType}'. Sample: ${text.slice(0, 200)}`
+			)
+		}
+
+		return (await res.json()) as T
+	} finally {
+		clearTimeout(timeout)
+	}
+}
+
 // Events API
 export interface EventItem {
 	id: string | null
@@ -161,12 +196,25 @@ export function searchSegments(query: string, params?: { page?: number; limit?: 
 }
 
 // Campaigns API
+export interface ScheduleData {
+    start_date: string
+    start_time: string
+    end_time?: string
+    recurrence: string
+    selected_week_days?: string[]
+    custom_interval?: number
+    custom_unit?: string
+    timezone: string
+}
+
 export interface CreateCampaignRequest {
     name: string
     description: string
     segment_id?: string
     channel_name?: string
     message_template_id?: string
+    schedule_type?: string
+    schedule_json?: string
 }
 
 export interface CreateCampaignResponseData {
@@ -184,6 +232,14 @@ export interface CreateCampaignResponseData {
 export function createCampaign(payload: CreateCampaignRequest) {
     return httpPost<ApiResponse<{ id: number; reference_id: string } | CreateCampaignResponseData>, CreateCampaignRequest>(
         `/app/campaigns`,
+        payload,
+        { headers: { "Content-Type": "application/json" } }
+    )
+}
+
+export function updateCampaign(referenceId: string, payload: CreateCampaignRequest) {
+    return httpPatch<ApiResponse<CreateCampaignResponseData>, CreateCampaignRequest>(
+        `/app/campaigns/${referenceId}`,
         payload,
         { headers: { "Content-Type": "application/json" } }
     )
@@ -408,5 +464,48 @@ export interface CreateSegmentResponse {
 
 export function createSegment(body: CreateSegmentRequest) {
 	return httpPost<ApiResponse<CreateSegmentResponse>>(`/app/segments`, body)
+}
+
+// Campaigns listing API
+export interface CampaignListItem {
+    id: number
+    referenceId: string
+    name: string
+    description: string
+    targetType: string
+    segmentId?: string
+    audienceJson?: string | null
+    channelName?: string
+    messageTemplateId?: string
+    channelJson?: string | null
+    scheduleType?: string
+    scheduleJson?: string | null
+    policyJson?: string | null
+    status: string
+    statusReason?: string | null
+    isActive: number
+    createdBy?: string
+    updatedBy?: string
+    createdAt: number
+    updatedAt: number
+    deletedAt?: number | null
+}
+
+export interface CampaignsPayload {
+    items: CampaignListItem[]
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+}
+
+export function fetchCampaigns(params: { page?: number; limit?: number }) {
+    const search = new URLSearchParams()
+    if (params.page) search.set("page", params.page.toString())
+    if (params.limit) search.set("limit", params.limit.toString())
+    const qs = search.toString()
+    return httpGet<ApiResponse<CampaignsPayload>>(`/app/campaigns${qs ? `?${qs}` : ""}`, {
+        headers: { "Content-Type": "application/json" },
+    })
 }
 

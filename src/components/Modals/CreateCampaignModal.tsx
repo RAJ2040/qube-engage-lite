@@ -4,15 +4,18 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+// removed unused Select imports after refactor to Popover/Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { ChevronLeft, ChevronRight, Check, Mail, MessageCircle, Smartphone, Bell } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Calendar } from "@/components/ui/calendar"
+import { ChevronLeft, ChevronRight, Check, Mail, MessageCircle, Smartphone, Bell, Calendar as CalendarIcon, Clock, Repeat } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { useEffect, useMemo, useState as useReactState } from "react"
-import { createCampaign, fetchCampaignByRef, fetchTemplateByName, fetchTemplateIds, launchCampaign, searchSegments, type TemplateIdItem } from "@/lib/api"
+import { useEffect, useState as useReactState } from "react"
+import { createCampaign, fetchCampaignByRef, fetchTemplateByName, fetchTemplateIds, launchCampaign, searchSegments, updateCampaign, type TemplateIdItem } from "@/lib/api"
+import { format } from "date-fns"
+import { cn } from "@/lib/utils"
 
 interface CreateCampaignModalProps {
   open: boolean
@@ -26,9 +29,33 @@ const channels = [
   { id: "push", name: "Push", icon: Bell, description: "Send push notifications" }
 ]
 
+const recurrenceOptions = [
+  { value: "once", label: "Once" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "yearly", label: "Yearly" },
+  { value: "custom", label: "Custom" }
+]
+
+const weekDays = [
+  { value: "monday", label: "Monday" },
+  { value: "tuesday", label: "Tuesday" },
+  { value: "wednesday", label: "Wednesday" },
+  { value: "thursday", label: "Thursday" },
+  { value: "friday", label: "Friday" },
+  { value: "saturday", label: "Saturday" },
+  { value: "sunday", label: "Sunday" }
+]
+
+const timeSlots = Array.from({ length: 24 }, (_, i) => {
+  const hour = i.toString().padStart(2, '0')
+  return { value: `${hour}:00`, label: `${hour}:00` }
+})
+
 // Dynamic search replaces static segments
 
-export function CreateCampaignModal({ open, onOpenChange }: CreateCampaignModalProps) {
+export function CreateCampaignModal({ open, onOpenChange, ...restProps }: CreateCampaignModalProps & { mode?: "create" | "edit"; referenceId?: string | null; initial?: { name?: string; description?: string; channel?: string; segmentName?: string; segmentRefId?: string | null; templateName?: string; templateId?: string | null; templateBody?: string } }) {
   const [step, setStep] = useState(1)
   const [campaignData, setCampaignData] = useState({
     name: "",
@@ -40,6 +67,15 @@ export function CreateCampaignModal({ open, onOpenChange }: CreateCampaignModalP
     template: "",
     templateName: "",
     templateId: null as null | string,
+    // Scheduling data
+    scheduleDate: null as Date | null,
+    startTime: "",
+    endTime: "",
+    recurrence: "once",
+    selectedWeekDays: [] as string[],
+    customInterval: 1,
+    customUnit: "days",
+    timezone: "Asia/Kolkata"
   })
   const [templateOpen, setTemplateOpen] = useState(false)
   const [templates, setTemplates] = useReactState<TemplateIdItem[]>([])
@@ -87,7 +123,7 @@ export function CreateCampaignModal({ open, onOpenChange }: CreateCampaignModalP
   }, [open, step, debouncedSegmentQuery])
 
   useEffect(() => {
-    if (!open || step !== 4) return
+    if (!open || step !== 5) return
     let isMounted = true
     setLoadingTemplates(true)
     setTemplateError(null)
@@ -132,13 +168,36 @@ export function CreateCampaignModal({ open, onOpenChange }: CreateCampaignModalP
       else throw new Error("Segment is required")
       if (campaignData.templateId) payload.message_template_id = campaignData.templateId
 
-      const res = await createCampaign(payload)
-      const reference_id = (res as any).data?.reference_id || (res as any).reference_id
-      setCreatedRefId(reference_id || null)
+      // Add scheduling data
+      if (campaignData.scheduleDate && campaignData.startTime) {
+        const scheduleData = {
+          start_date: format(campaignData.scheduleDate, "yyyy-MM-dd"),
+          start_time: campaignData.startTime,
+          end_time: campaignData.endTime || undefined,
+          recurrence: campaignData.recurrence,
+          selected_week_days: campaignData.selectedWeekDays.length > 0 ? campaignData.selectedWeekDays : undefined,
+          custom_interval: campaignData.recurrence === "custom" ? campaignData.customInterval : undefined,
+          custom_unit: campaignData.recurrence === "custom" ? campaignData.customUnit : undefined,
+          timezone: campaignData.timezone
+        }
+        
+        payload.schedule_type = campaignData.recurrence === "once" ? "IMMEDIATE" : "SCHEDULED"
+        payload.schedule_json = JSON.stringify(scheduleData)
+      }
 
-      toast({
-        title: "Campaign Created Successfully",
-        description: `${campaignData.name} has been created. Ref: ${reference_id ?? "n/a"}`,
+      if (restProps.mode === "edit" && restProps.referenceId) {
+        const res = await updateCampaign(restProps.referenceId, payload)
+        const refId = (res as any).data?.reference_id || restProps.referenceId
+        setCreatedRefId(refId || null)
+      } else {
+        const res = await createCampaign(payload)
+        const refId = (res as any).data?.reference_id || (res as any).reference_id
+        setCreatedRefId(refId || null)
+      }
+
+    toast({
+      title: "Campaign Created Successfully",
+        description: `${campaignData.name} has been created. Ref: ${createdRefId ?? "n/a"}`,
       })
       // Keep modal open; user can proceed steps normally
     } catch (err) {
@@ -156,14 +215,34 @@ export function CreateCampaignModal({ open, onOpenChange }: CreateCampaignModalP
     switch (step) {
       case 1: return campaignData.name.trim() !== ""
       case 2: return campaignData.channel !== ""
-      case 3: return campaignData.segment !== ""
-      case 4: return campaignData.template.trim() !== ""
+      case 3: return !!campaignData.segmentRefId
+      case 4: return !!campaignData.scheduleDate && !!campaignData.startTime
+      case 5: return !!campaignData.templateId
       default: return true
     }
   }
 
+  // Prefill on open for edit mode
   useEffect(() => {
-    if (!open || step !== 5 || !createdRefId) return
+    if (!open) return
+    if (restProps.mode === "edit" && restProps.initial) {
+      setCampaignData((prev) => ({
+        ...prev,
+        name: restProps.initial?.name ?? prev.name,
+        description: restProps.initial?.description ?? prev.description,
+        channel: restProps.initial?.channel ?? prev.channel,
+        segment: restProps.initial?.segmentName ?? prev.segment,
+        segmentRefId: restProps.initial?.segmentRefId ?? prev.segmentRefId,
+        templateName: restProps.initial?.templateName ?? prev.templateName,
+        templateId: restProps.initial?.templateId ?? prev.templateId,
+        template: restProps.initial?.templateBody ?? prev.template,
+      }))
+      setCreatedRefId(restProps.referenceId ?? null)
+    }
+  }, [open, restProps.mode, restProps.initial, restProps.referenceId])
+
+  useEffect(() => {
+    if (!open || step !== 6 || !createdRefId) return
     let isMounted = true
     setLoadingDetails(true)
     setDetailsError(null)
@@ -183,13 +262,22 @@ export function CreateCampaignModal({ open, onOpenChange }: CreateCampaignModalP
     return () => { isMounted = false }
   }, [open, step, createdRefId])
 
+  const toggleWeekDay = (day: string) => {
+    setCampaignData(prev => ({
+      ...prev,
+      selectedWeekDays: prev.selectedWeekDays.includes(day)
+        ? prev.selectedWeekDays.filter(d => d !== day)
+        : [...prev.selectedWeekDays, day]
+    }))
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create Campaign</DialogTitle>
+          <DialogTitle>{restProps.mode === "edit" ? "Edit Campaign" : "Create Campaign"}</DialogTitle>
           <div className="flex items-center gap-2 mt-4">
-            {[1, 2, 3, 4, 5].map((stepNum) => (
+            {[1, 2, 3, 4, 5, 6].map((stepNum) => (
               <div key={stepNum} className="flex items-center">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
                   stepNum < step ? "bg-primary text-primary-foreground" :
@@ -198,7 +286,7 @@ export function CreateCampaignModal({ open, onOpenChange }: CreateCampaignModalP
                 }`}>
                   {stepNum < step ? <Check className="w-4 h-4" /> : stepNum}
                 </div>
-                {stepNum < 5 && <div className={`w-8 h-0.5 ${stepNum < step ? "bg-primary" : "bg-muted"}`} />}
+                {stepNum < 6 && <div className={`w-8 h-0.5 ${stepNum < step ? "bg-primary" : "bg-muted"}`} />}
               </div>
             ))}
           </div>
@@ -295,6 +383,156 @@ export function CreateCampaignModal({ open, onOpenChange }: CreateCampaignModalP
           )}
 
           {step === 4 && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold">Schedule Campaign</h3>
+              
+              {/* Date Selection */}
+              <div className="space-y-2">
+                <Label>Start Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !campaignData.scheduleDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {campaignData.scheduleDate ? format(campaignData.scheduleDate, "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={campaignData.scheduleDate}
+                      onSelect={(date) => setCampaignData({ ...campaignData, scheduleDate: date })}
+                      initialFocus
+                      disabled={(date) => date < new Date()}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Time Selection */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Start Time</Label>
+                  <Select value={campaignData.startTime} onValueChange={(value) => setCampaignData({ ...campaignData, startTime: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select start time" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {timeSlots.map((slot) => (
+                        <SelectItem key={slot.value} value={slot.value}>
+                          {slot.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>End Time (Optional)</Label>
+                  <Select value={campaignData.endTime} onValueChange={(value) => setCampaignData({ ...campaignData, endTime: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select end time" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {timeSlots.map((slot) => (
+                        <SelectItem key={slot.value} value={slot.value}>
+                          {slot.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Recurrence Options */}
+              <div className="space-y-4">
+                <Label>Recurrence</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {recurrenceOptions.map((option) => (
+                    <Button
+                      key={option.value}
+                      variant={campaignData.recurrence === option.value ? "default" : "outline"}
+                      className="justify-start"
+                      onClick={() => setCampaignData({ ...campaignData, recurrence: option.value })}
+                    >
+                      <Repeat className="mr-2 h-4 w-4" />
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Weekly Days Selection */}
+              {campaignData.recurrence === "weekly" && (
+                <div className="space-y-2">
+                  <Label>Select Days</Label>
+                  <div className="grid grid-cols-7 gap-2">
+                    {weekDays.map((day) => (
+                      <Button
+                        key={day.value}
+                        variant={campaignData.selectedWeekDays.includes(day.value) ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => toggleWeekDay(day.value)}
+                      >
+                        {day.label.slice(0, 3)}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Custom Interval */}
+              {campaignData.recurrence === "custom" && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Interval</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={campaignData.customInterval}
+                      onChange={(e) => setCampaignData({ ...campaignData, customInterval: parseInt(e.target.value) || 1 })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Unit</Label>
+                    <Select value={campaignData.customUnit} onValueChange={(value) => setCampaignData({ ...campaignData, customUnit: value })}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="days">Days</SelectItem>
+                        <SelectItem value="weeks">Weeks</SelectItem>
+                        <SelectItem value="months">Months</SelectItem>
+                        <SelectItem value="years">Years</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
+              {/* Timezone */}
+              <div className="space-y-2">
+                <Label>Timezone</Label>
+                <Select value={campaignData.timezone} onValueChange={(value) => setCampaignData({ ...campaignData, timezone: value })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Asia/Kolkata">Asia/Kolkata (IST)</SelectItem>
+                    <SelectItem value="UTC">UTC</SelectItem>
+                    <SelectItem value="America/New_York">America/New_York (EST)</SelectItem>
+                    <SelectItem value="Europe/London">Europe/London (GMT)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          {step === 5 && (
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Message Template</h3>
               <div className="space-y-2">
@@ -350,7 +588,7 @@ export function CreateCampaignModal({ open, onOpenChange }: CreateCampaignModalP
             </div>
           )}
 
-          {step === 5 && (
+          {step === 6 && (
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Preview & Launch</h3>
               {createdRefId && (
@@ -375,6 +613,12 @@ export function CreateCampaignModal({ open, onOpenChange }: CreateCampaignModalP
                   {campaignDetails?.description || campaignData.description ? (
                     <div><strong>Description:</strong> {campaignDetails?.description ?? campaignData.description}</div>
                   ) : null}
+                  {campaignData.scheduleDate && (
+                    <div><strong>Schedule:</strong> {format(campaignData.scheduleDate, "PPP")} at {campaignData.startTime}</div>
+                  )}
+                  {campaignData.recurrence !== "once" && (
+                    <div><strong>Recurrence:</strong> {recurrenceOptions.find(r => r.value === campaignData.recurrence)?.label}</div>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -387,14 +631,14 @@ export function CreateCampaignModal({ open, onOpenChange }: CreateCampaignModalP
             Previous
           </Button>
           
-          {step < 5 ? (
+          {step < 6 ? (
             <Button onClick={async () => {
-              // Only create the campaign after required selections (end of step 4)
-              if (step < 4) {
+              // Only create the campaign after required selections (end of step 5)
+              if (step < 5) {
                 nextStep()
                 return
               }
-              if (step === 4) {
+              if (step === 5) {
                 await handleSubmit()
                 nextStep()
                 return
@@ -404,7 +648,8 @@ export function CreateCampaignModal({ open, onOpenChange }: CreateCampaignModalP
               (step === 1 && campaignData.name.trim() === "") ||
               (step === 2 && !campaignData.channel) ||
               (step === 3 && !campaignData.segmentRefId) ||
-              (step === 4 && (campaignData.template.trim() === "" || creating))
+              (step === 4 && (!campaignData.scheduleDate || !campaignData.startTime)) ||
+              (step === 5 && (!campaignData.templateId || creating))
             }>
               Next
               <ChevronRight className="w-4 h-4 ml-2" />
