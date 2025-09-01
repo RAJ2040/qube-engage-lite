@@ -29,6 +29,7 @@ import {
 const campaignsStatic = [
   {
     id: 1,
+    referenceId: "welcome-email-series-001",
     name: "Welcome Email Series",
     type: "Email",
     icon: Mail,
@@ -42,6 +43,7 @@ const campaignsStatic = [
   },
   {
     id: 2,
+    referenceId: "flash-sale-whatsapp-002",
     name: "Flash Sale WhatsApp",
     type: "WhatsApp", 
     icon: MessageCircle,
@@ -55,6 +57,7 @@ const campaignsStatic = [
   },
   {
     id: 3,
+    referenceId: "cart-abandonment-sms-003",
     name: "Cart Abandonment SMS",
     type: "SMS",
     icon: Smartphone,
@@ -68,6 +71,7 @@ const campaignsStatic = [
   },
   {
     id: 4,
+    referenceId: "re-engagement-push-004",
     name: "Re-engagement Push",
     type: "Push",
     icon: Smartphone,
@@ -111,7 +115,28 @@ const getTypeIcon = (type: string) => {
 export default function Campaigns() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editRefId, setEditRefId] = useState<string | null>(null)
-  const [editInitial, setEditInitial] = useState<any | null>(null)
+  const [editInitial, setEditInitial] = useState<{
+    name?: string;
+    description?: string;
+    channel?: string;
+    segmentName?: string;
+    segmentRefId?: string | null;
+    templateName?: string;
+    templateId?: string | null;
+    templateBody?: string;
+    throttling?: {
+      max_messages_per_minute: number;
+      max_messages_per_hour: number;
+      max_messages_per_day: number;
+      burst_limit: number;
+    };
+    retry_policy?: {
+      max_retries: number;
+      retry_delay_minutes: number;
+      backoff_multiplier: number;
+      retry_on_statuses: string[];
+    };
+  } | null>(null)
   const [items, setItems] = useState<CampaignListItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -197,11 +222,13 @@ export default function Campaigns() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {(items.length ? items : campaignsStatic).map((campaign: any) => {
-              const displayType = campaign.type || campaign.channelName || "Push"
+            {(items.length ? items : campaignsStatic).map((campaign: CampaignListItem | typeof campaignsStatic[0], index: number) => {
+              const displayType = campaign.type || campaign.channel_name || "Push"
               const TypeIcon = getTypeIcon(displayType)
+              // Ensure unique key by combining multiple identifiers
+              const uniqueKey = campaign.id || campaign.reference_id || `static-${campaign.name}-${index}`
               return (
-                <Card key={campaign.id ?? campaign.referenceId} className="hover-lift">
+                <Card key={uniqueKey} className="hover-lift">
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-4 flex-1">
@@ -215,7 +242,7 @@ export default function Campaigns() {
                             {getStatusBadge(campaign.status ?? "Draft")}
                             <Badge variant="outline">
                               <Users className="w-3 h-3 mr-1" />
-                              {campaign.segment ?? campaign.segmentId ?? "Segment"}
+                              {campaign.segment ?? campaign.segment_id ?? "Segment"}
                             </Badge>
                           </div>
                           
@@ -293,22 +320,76 @@ export default function Campaigns() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={async () => {
+                              if (!campaign.reference_id) {
+                                console.warn("Cannot edit campaign: reference_id is undefined")
+                                return
+                              }
+                              
                               try {
-                                const res = await fetchCampaignByRef(campaign.referenceId)
+                                const res = await fetchCampaignByRef(campaign.reference_id)
                                 const d = res.data
+                                
+                                // Parse throttling and retry policy from JSON strings
+                                let throttling = undefined
+                                let retry_policy = undefined
+                                
+                                try {
+                                  if (d.throttlingJson) {
+                                    throttling = JSON.parse(d.throttlingJson)
+                                  }
+                                } catch (e) {
+                                  console.warn("Failed to parse throttling JSON:", e)
+                                }
+                                
+                                try {
+                                  if (d.retryPolicyJson) {
+                                    retry_policy = JSON.parse(d.retryPolicyJson)
+                                  }
+                                } catch (e) {
+                                  console.warn("Failed to parse retry policy JSON:", e)
+                                }
+                                
                                 setEditInitial({
                                   name: d.name,
                                   description: d.description,
-                                  channel: d.channelName,
-                                  segmentName: d.segmentId,
-                                  segmentRefId: d.segmentId,
-                                  templateName: d.messageTemplateId,
-                                  templateId: d.messageTemplateId,
+                                  channel: d.channel_name,
+                                  segmentName: d.segment_id,
+                                  segmentRefId: d.segment_id,
+                                  templateName: d.message_template_id,
+                                  templateId: d.message_template_id,
                                   templateBody: "",
+                                  throttling,
+                                  retry_policy,
                                 })
-                                setEditRefId(campaign.referenceId)
-                              } catch {
-                                setEditRefId(campaign.referenceId)
+                                setEditRefId(campaign.reference_id)
+                              } catch (error) {
+                                console.error("Failed to fetch campaign details:", error)
+                                // For static data, create a mock initial state
+                                if (campaign.id && campaign.name) {
+                                  setEditInitial({
+                                    name: campaign.name,
+                                    description: `Edit ${campaign.name}`,
+                                    channel: campaign.type?.toLowerCase(),
+                                    segmentName: campaign.segment,
+                                    segmentRefId: null,
+                                    templateName: "",
+                                    templateId: null,
+                                    templateBody: "",
+                                    throttling: {
+                                      max_messages_per_minute: 60,
+                                      max_messages_per_hour: 1000,
+                                      max_messages_per_day: 10000,
+                                      burst_limit: 10
+                                    },
+                                    retry_policy: {
+                                      max_retries: 3,
+                                      retry_delay_minutes: 5,
+                                      backoff_multiplier: 2,
+                                      retry_on_statuses: ["5xx", "429"]
+                                    }
+                                  })
+                                  setEditRefId(campaign.reference_id)
+                                }
                               }
                             }}>Edit Campaign</DropdownMenuItem>
                             <DropdownMenuItem>Duplicate</DropdownMenuItem>

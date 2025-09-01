@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -7,23 +8,26 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { User, Settings, LogOut, Mail, Shield } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@/contexts/AuthContext"
 
 export function ProfileDropdown() {
   const [showProfile, setShowProfile] = useState(false)
   const { toast } = useToast()
+  const navigate = useNavigate()
+  const { user, logout } = useAuth()
 
   const handleLogout = () => {
+    logout()
     toast({
       title: "Logged Out",
       description: "You have been successfully logged out.",
     })
-    // In a real app, this would clear auth tokens and redirect
-    console.log("Logout functionality would be implemented here")
+    navigate("/login")
   }
 
   const userData = {
-    name: "John Doe",
-    email: "john.doe@company.com",
+    name: user?.name || "User",
+    email: user?.email || "user@example.com",
     role: "Marketing Manager",
     department: "Growth Team",
     joinDate: "January 2023",
@@ -59,7 +63,7 @@ export function ProfileDropdown() {
             <User className="mr-2 h-4 w-4" />
             View Profile
           </DropdownMenuItem>
-          <DropdownMenuItem>
+          <DropdownMenuItem onClick={() => navigate("/settings")}>
             <Settings className="mr-2 h-4 w-4" />
             Settings
           </DropdownMenuItem>

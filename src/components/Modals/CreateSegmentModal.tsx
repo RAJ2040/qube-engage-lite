@@ -7,18 +7,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, X } from "lucide-react"
+import { Plus, X, Calendar as CalendarIcon, Clock } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command"
+import { Calendar } from "@/components/ui/calendar"
+import { format } from "date-fns"
 import {
   fetchUserPropsCatalog,
   fetchEventsCatalog,
   fetchEventCatalogDetails,
   fetchOperatorsCatalog,
+  fetchFieldCatalog,
   type EventsCatalogItem,
   type OperatorsCatalogPayload,
   type UserPropsCatalogPayload,
+  type FieldCatalogData,
   previewSegment,
   createSegment,
   type SegmentsPreviewItem,
@@ -52,6 +56,10 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
   const [eventsCatalog, setEventsCatalog] = useState<EventsCatalogItem[]>([])
   const [userPropsCatalog, setUserPropsCatalog] = useState<UserPropsCatalogPayload | null>(null)
   const [operatorsCatalog, setOperatorsCatalog] = useState<OperatorsCatalogPayload | null>(null)
+  const [fieldCatalogValues, setFieldCatalogValues] = useState<Record<string, string[]>>({})
+  const [loadingFieldCatalog, setLoadingFieldCatalog] = useState(false)
+  const [dateValues, setDateValues] = useState<Record<string, Date | undefined>>({})
+  const [timeValues, setTimeValues] = useState<Record<string, string>>({})
   const { toast } = useToast()
 
   // Load catalogs when modal opens
@@ -98,6 +106,57 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
     setFilters(filters.map(f => f.id === id ? { ...f, [key]: value } : f))
   }
 
+  // Function to fetch field catalog values
+  const fetchFieldValues = async (fieldName: string) => {
+    if (fieldCatalogValues[fieldName]) {
+      return // Already cached
+    }
+    
+    setLoadingFieldCatalog(true)
+    try {
+      const res = await fetchFieldCatalog(fieldName)
+      setFieldCatalogValues(prev => ({
+        ...prev,
+        [fieldName]: res.data.values || []
+      }))
+    } catch (err) {
+      console.error(`Failed to fetch values for field ${fieldName}:`, err)
+      // Set empty array to prevent repeated failed requests
+      setFieldCatalogValues(prev => ({
+        ...prev,
+        [fieldName]: []
+      }))
+    } finally {
+      setLoadingFieldCatalog(false)
+    }
+  }
+
+  // Function to determine input type for field
+  const getFieldInputType = (fieldName: string, fieldType?: CatalogType) => {
+    // Special fields that should use combobox (typable dropdown)
+    const comboboxFields = ['gender', 'company_name', 'status']
+    
+    if (fieldName === 'login_date') {
+      return 'date'
+    }
+    if (fieldName === 'event_time') {
+      return 'time'
+    }
+    if (comboboxFields.includes(fieldName)) {
+      return 'combobox'
+    }
+    if (fieldType === 'date') {
+      return 'date'
+    }
+    if (fieldType === 'number') {
+      return 'number'
+    }
+    if (fieldType === 'bool') {
+      return 'boolean'
+    }
+    return 'dropdown' // Default to dropdown for other string fields
+  }
+
   const applicableOperators = (type?: CatalogType) => {
     if (!operatorsCatalog || !type) return ["eq"]
     return operatorsCatalog[type] ?? ["eq"]
@@ -138,25 +197,37 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
     const anyOfEvents = filters
       .filter(f => f.entity === "Events" && f.eventName)
       .map(f => {
-        const base = { name: f.eventName! } as any
+        const eventObj: Record<string, { operator: string; value: unknown }> = {}
+        
+        // Add event name with operator
+        eventObj.name = { operator: "eq", value: f.eventName! }
+        
         // Build props from multi-props if present, else from single field/value
-        const propObj: Record<string, unknown> = {}
         if (Array.isArray(f.props) && f.props.length > 0) {
           f.props.forEach(p => {
             if (p.field && p.value !== "") {
-              propObj[p.field] = coerceValue(p.value, p.fieldType)
+              eventObj[p.field] = { 
+                operator: p.operator, 
+                value: coerceValue(p.value, p.fieldType) 
+              }
             }
           })
         } else if (f.field && f.value !== "") {
-          propObj[f.field] = coerceValue(f.value, f.fieldType)
+          eventObj[f.field] = { 
+            operator: f.operator, 
+            value: coerceValue(f.value, f.fieldType) 
+          }
         }
-        if (Object.keys(propObj).length > 0) base.prop = propObj
-        return { event: base }
+        
+        return { event: eventObj }
       })
 
     const userPropFilters = filters.filter(f => f.entity === "Users" && f.field && f.value !== "")
-    const criteriaProps = userPropFilters.reduce<Record<string, unknown>>((acc, f) => {
-      acc[f.field] = coerceValue(f.value, f.fieldType)
+    const criteriaProps = userPropFilters.reduce<Record<string, { operator: string; value: unknown }>>((acc, f) => {
+      acc[f.field] = { 
+        operator: f.operator, 
+        value: coerceValue(f.value, f.fieldType) 
+      }
       return acc
     }, {})
 
@@ -186,6 +257,7 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
     setPreviewLoading(true)
     try {
       const definition = buildDefinition()
+      console.log("Preview payload:", JSON.stringify({ definition }, null, 2))
       const res = await previewSegment({ definition, page: 1, limit: 20, sortBy: "event_time", sortDir: "desc" })
       setPreviewItems(res.data.items || [])
     } catch (err) {
@@ -198,6 +270,13 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
   const handleSave = async () => {
     try {
       const definition = buildDefinition()
+      console.log("Save payload:", JSON.stringify({ 
+        name: segmentName,
+        description: "",
+        status: "DRAFT",
+        is_active: 1,
+        definition 
+      }, null, 2))
       await createSegment({
         name: segmentName,
         description: "",
@@ -400,6 +479,17 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
                       <Select value={filter.field} onValueChange={(value) => {
                         const ft = userFields.find(u => u.key === value)?.type
                         setFilters(filters.map(f => f.id === filter.id ? { ...f, field: value, fieldType: ft } : f))
+                        // Fetch field catalog values when field is selected
+                        if (value) {
+                          fetchFieldValues(value)
+                        }
+                        // Initialize date/time values for specific fields
+                        if (value === 'login_date') {
+                          setDateValues(prev => ({ ...prev, [filter.id]: undefined }))
+                        }
+                        if (value === 'event_time') {
+                          setTimeValues(prev => ({ ...prev, [filter.id]: "" }))
+                        }
                       }}>
                         <SelectTrigger className="w-60">
                           <SelectValue placeholder="Select user property" />
@@ -425,12 +515,160 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
                         </SelectContent>
                       </Select>
                         {filter.operator !== "exists" && (
-                      <Input
-                            placeholder={filter.operator === "in" ? "Comma-separated" : "Enter value"}
-                        value={filter.value}
-                        onChange={(e) => updateFilter(filter.id, "value", e.target.value)}
-                            className="w-40"
-                      />
+                          <>
+                            {(() => {
+                              const inputType = getFieldInputType(filter.field, filter.fieldType)
+                              
+                              // Date picker for login_date and date fields
+                              if (inputType === 'date') {
+                                return (
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        variant="outline"
+                                        className="w-40 justify-start text-left font-normal"
+                                      >
+                                        <CalendarIcon className="mr-2 h-4 w-4" />
+                                        {dateValues[filter.id] ? format(dateValues[filter.id]!, "PPP") : "Pick a date"}
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0">
+                                      <Calendar
+                                        mode="single"
+                                        selected={dateValues[filter.id]}
+                                        onSelect={(date) => {
+                                          setDateValues(prev => ({ ...prev, [filter.id]: date }))
+                                          if (date) {
+                                            updateFilter(filter.id, "value", format(date, "yyyy-MM-dd"))
+                                          }
+                                        }}
+                                        initialFocus
+                                      />
+                                    </PopoverContent>
+                                  </Popover>
+                                )
+                              }
+                              
+                              // Time picker for event_time
+                              if (inputType === 'time') {
+                                return (
+                                  <Input
+                                    type="time"
+                                    value={timeValues[filter.id] || ""}
+                                    onChange={(e) => {
+                                      setTimeValues(prev => ({ ...prev, [filter.id]: e.target.value }))
+                                      updateFilter(filter.id, "value", e.target.value)
+                                    }}
+                                    className="w-40"
+                                  />
+                                )
+                              }
+                              
+                              // Number input for number fields
+                              if (inputType === 'number') {
+                                return (
+                                  <Input
+                                    type="number"
+                                    placeholder="Enter number"
+                                    value={filter.value}
+                                    onChange={(e) => updateFilter(filter.id, "value", e.target.value)}
+                                    className="w-40"
+                                  />
+                                )
+                              }
+                              
+                              // Boolean select for bool fields
+                              if (inputType === 'boolean') {
+                                return (
+                                  <Select
+                                    value={filter.value}
+                                    onValueChange={(value) => updateFilter(filter.id, "value", value)}
+                                  >
+                                    <SelectTrigger className="w-40">
+                                      <SelectValue placeholder="Select value" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="true">True</SelectItem>
+                                      <SelectItem value="false">False</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                )
+                              }
+                              
+                              // Combobox for gender, company_name, status
+                              if (inputType === 'combobox') {
+                                return (
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        className="w-40 justify-between"
+                                      >
+                                        {filter.value || "Select value..."}
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-40 p-0">
+                                      <Command>
+                                        <CommandInput 
+                                          placeholder="Search or type..." 
+                                          value={filter.value}
+                                          onValueChange={(value) => updateFilter(filter.id, "value", value)}
+                                        />
+                                        <CommandEmpty>No value found.</CommandEmpty>
+                                        <CommandGroup>
+                                          {fieldCatalogValues[filter.field]?.map((value) => (
+                                            <CommandItem
+                                              key={value}
+                                              value={value}
+                                              onSelect={(currentValue) => {
+                                                updateFilter(filter.id, "value", currentValue)
+                                              }}
+                                            >
+                                              {value}
+                                            </CommandItem>
+                                          ))}
+                                        </CommandGroup>
+                                      </Command>
+                                    </PopoverContent>
+                                  </Popover>
+                                )
+                              }
+                              
+                              // Default dropdown for other fields
+                              if (fieldCatalogValues[filter.field] && fieldCatalogValues[filter.field].length > 0) {
+                                return (
+                                  <Select
+                                    value={filter.value}
+                                    onValueChange={(value) => updateFilter(filter.id, "value", value)}
+                                    disabled={loadingFieldCatalog}
+                                  >
+                                    <SelectTrigger className="w-40">
+                                      <SelectValue placeholder={loadingFieldCatalog ? "Loading..." : "Select value"} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {fieldCatalogValues[filter.field]?.map((value) => (
+                                        <SelectItem key={value} value={value}>{value}</SelectItem>
+                                      ))}
+                                      {fieldCatalogValues[filter.field]?.length === 0 && !loadingFieldCatalog && (
+                                        <SelectItem value="" disabled>No values available</SelectItem>
+                                      )}
+                                    </SelectContent>
+                                  </Select>
+                                )
+                              }
+                              
+                              // Fallback to input
+                              return (
+                                <Input
+                                  placeholder={filter.operator === "in" ? "Comma-separated" : "Enter value"}
+                                  value={filter.value}
+                                  onChange={(e) => updateFilter(filter.id, "value", e.target.value)}
+                                  className="w-40"
+                                />
+                              )
+                            })()}
+                          </>
                         )}
                       </>
                     )}

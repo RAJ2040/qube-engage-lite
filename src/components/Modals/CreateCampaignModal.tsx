@@ -10,7 +10,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Calendar } from "@/components/ui/calendar"
-import { ChevronLeft, ChevronRight, Check, Mail, MessageCircle, Smartphone, Bell, Calendar as CalendarIcon, Clock, Repeat } from "lucide-react"
+import { ChevronLeft, ChevronRight, Check, Mail, MessageCircle, Smartphone, Bell, Calendar as CalendarIcon, Clock, Repeat, Loader2, Save } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useEffect, useState as useReactState } from "react"
 import { createCampaign, fetchCampaignByRef, fetchTemplateByName, fetchTemplateIds, launchCampaign, searchSegments, updateCampaign, type TemplateIdItem } from "@/lib/api"
@@ -30,12 +30,11 @@ const channels = [
 ]
 
 const recurrenceOptions = [
-  { value: "once", label: "Once" },
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-  { value: "monthly", label: "Monthly" },
-  { value: "yearly", label: "Yearly" },
-  { value: "custom", label: "Custom" }
+  { value: "IMMEDIATE", label: "Immediate" },
+  { value: "ONE_TIME", label: "One Time" },
+  { value: "RECURRING", label: "Recurring" },
+  { value: "WEEKLY", label: "Weekly" },
+  { value: "MONTHLY", label: "Monthly" }
 ]
 
 const weekDays = [
@@ -55,7 +54,32 @@ const timeSlots = Array.from({ length: 24 }, (_, i) => {
 
 // Dynamic search replaces static segments
 
-export function CreateCampaignModal({ open, onOpenChange, ...restProps }: CreateCampaignModalProps & { mode?: "create" | "edit"; referenceId?: string | null; initial?: { name?: string; description?: string; channel?: string; segmentName?: string; segmentRefId?: string | null; templateName?: string; templateId?: string | null; templateBody?: string } }) {
+export function CreateCampaignModal({ open, onOpenChange, ...restProps }: CreateCampaignModalProps & { 
+  mode?: "create" | "edit"; 
+  referenceId?: string | null; 
+  initial?: { 
+    name?: string; 
+    description?: string; 
+    channel?: string; 
+    segmentName?: string; 
+    segmentRefId?: string | null; 
+    templateName?: string; 
+    templateId?: string | null; 
+    templateBody?: string;
+    throttling?: {
+      max_messages_per_minute: number;
+      max_messages_per_hour: number;
+      max_messages_per_day: number;
+      burst_limit: number;
+    };
+    retry_policy?: {
+      max_retries: number;
+      retry_delay_minutes: number;
+      backoff_multiplier: number;
+      retry_on_statuses: string[];
+    };
+  } 
+}) {
   const [step, setStep] = useState(1)
   const [campaignData, setCampaignData] = useState({
     name: "",
@@ -71,11 +95,24 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
     scheduleDate: null as Date | null,
     startTime: "",
     endTime: "",
-    recurrence: "once",
+    recurrence: "IMMEDIATE",
     selectedWeekDays: [] as string[],
     customInterval: 1,
     customUnit: "days",
-    timezone: "Asia/Kolkata"
+    timezone: "Asia/Kolkata",
+    // Throttling and retry policy
+    throttling: {
+      max_messages_per_minute: 100,
+      max_messages_per_hour: 1000,
+      max_messages_per_day: 10000,
+      burst_limit: 50
+    },
+    retry_policy: {
+      max_retries: 3,
+      retry_delay_minutes: 5,
+      backoff_multiplier: 2.0,
+      retry_on_statuses: ["FAILED", "TIMEOUT"]
+    }
   })
   const [templateOpen, setTemplateOpen] = useState(false)
   const [templates, setTemplates] = useReactState<TemplateIdItem[]>([])
@@ -123,7 +160,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
   }, [open, step, debouncedSegmentQuery])
 
   useEffect(() => {
-    if (!open || step !== 5) return
+    if (!open || step !== 6) return
     let isMounted = true
     setLoadingTemplates(true)
     setTemplateError(null)
@@ -144,7 +181,13 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
   }, [open, step])
   const { toast } = useToast()
 
-  const nextStep = () => setStep(step + 1)
+  const nextStep = async () => {
+    // Save current step data before moving to next step
+    if (isStepValid()) {
+      await savePartialCampaign(step)
+    }
+    setStep(step + 1)
+  }
   const prevStep = () => setStep(step - 1)
 
   const [creating, setCreating] = useState(false)
@@ -152,6 +195,125 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
   const [campaignDetails, setCampaignDetails] = useReactState<any | null>(null)
   const [loadingDetails, setLoadingDetails] = useReactState(false)
   const [detailsError, setDetailsError] = useReactState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [lastSaved, setLastSaved] = useState<number | null>(null)
+
+  // Function to save partial campaign data after each step
+  const savePartialCampaign = async (stepNumber: number) => {
+    if (!createdRefId && restProps.mode !== "edit") {
+      // For new campaigns, we need to create first
+      try {
+        setSaving(true)
+        const payload: any = {
+          name: campaignData.name,
+          description: campaignData.description,
+        }
+        
+        // Add data based on current step
+        if (stepNumber >= 2 && campaignData.channel) {
+          payload.channel_name = campaignData.channel
+        }
+        if (stepNumber >= 3 && campaignData.segmentRefId) {
+          payload.segment_id = campaignData.segmentRefId
+        }
+        if (stepNumber >= 4 && campaignData.scheduleDate && campaignData.startTime) {
+          const scheduleData = {
+            start_date: format(campaignData.scheduleDate, "yyyy-MM-dd"),
+            start_time: campaignData.startTime,
+            end_time: campaignData.endTime || undefined,
+            recurrence: campaignData.recurrence,
+            selected_week_days: campaignData.selectedWeekDays.length > 0 ? campaignData.selectedWeekDays : undefined,
+            custom_interval: campaignData.recurrence === "RECURRING" ? campaignData.customInterval : undefined,
+            custom_unit: campaignData.recurrence === "RECURRING" ? campaignData.customUnit : undefined,
+            timezone: campaignData.timezone
+          }
+          payload.schedule_type = campaignData.recurrence
+          payload.schedule_json = JSON.stringify(scheduleData)
+        }
+        if (stepNumber >= 5) {
+          payload.throttling = campaignData.throttling
+          payload.retry_policy = campaignData.retry_policy
+        }
+        if (stepNumber >= 6 && campaignData.templateId) {
+          payload.message_template_id = campaignData.templateId
+        }
+
+        const res = await createCampaign(payload)
+        const refId = (res as any).data?.reference_id || (res as any).reference_id
+        setCreatedRefId(refId || null)
+        
+        toast({
+          title: "Campaign Saved",
+          description: `Step ${stepNumber} data has been saved.`,
+        })
+        setLastSaved(Date.now())
+      } catch (err) {
+        toast({
+          title: "Failed to save campaign",
+          description: err instanceof Error ? err.message : "Unknown error",
+          variant: "destructive",
+        })
+      } finally {
+        setSaving(false)
+      }
+    } else {
+      // For existing campaigns, update with current step data
+      try {
+        setSaving(true)
+        const payload: any = {
+          name: campaignData.name,
+          description: campaignData.description,
+        }
+        
+        // Add data based on current step
+        if (stepNumber >= 2 && campaignData.channel) {
+          payload.channel_name = campaignData.channel
+        }
+        if (stepNumber >= 3 && campaignData.segmentRefId) {
+          payload.segment_id = campaignData.segmentRefId
+        }
+        if (stepNumber >= 4 && campaignData.scheduleDate && campaignData.startTime) {
+          const scheduleData = {
+            start_date: format(campaignData.scheduleDate, "yyyy-MM-dd"),
+            start_time: campaignData.startTime,
+            end_time: campaignData.endTime || undefined,
+            recurrence: campaignData.recurrence,
+            selected_week_days: campaignData.selectedWeekDays.length > 0 ? campaignData.selectedWeekDays : undefined,
+            custom_interval: campaignData.recurrence === "RECURRING" ? campaignData.customInterval : undefined,
+            custom_unit: campaignData.recurrence === "RECURRING" ? campaignData.customUnit : undefined,
+            timezone: campaignData.timezone
+          }
+          payload.schedule_type = campaignData.recurrence
+          payload.schedule_json = JSON.stringify(scheduleData)
+        }
+        if (stepNumber >= 5) {
+          payload.throttling = campaignData.throttling
+          payload.retry_policy = campaignData.retry_policy
+        }
+        if (stepNumber >= 6 && campaignData.templateId) {
+          payload.message_template_id = campaignData.templateId
+        }
+
+        const refId = createdRefId || restProps.referenceId
+        if (refId) {
+          await updateCampaign(refId, payload)
+          toast({
+            title: "Campaign Updated",
+            description: `Step ${stepNumber} data has been saved.`,
+          })
+          setLastSaved(Date.now())
+        }
+      } catch (err) {
+        toast({
+          title: "Failed to update campaign",
+          description: err instanceof Error ? err.message : "Unknown error",
+          variant: "destructive",
+        })
+      } finally {
+        setSaving(false)
+      }
+    }
+  }
 
   const handleSubmit = async () => {
     try {
@@ -176,14 +338,18 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
           end_time: campaignData.endTime || undefined,
           recurrence: campaignData.recurrence,
           selected_week_days: campaignData.selectedWeekDays.length > 0 ? campaignData.selectedWeekDays : undefined,
-          custom_interval: campaignData.recurrence === "custom" ? campaignData.customInterval : undefined,
-          custom_unit: campaignData.recurrence === "custom" ? campaignData.customUnit : undefined,
+          custom_interval: campaignData.recurrence === "RECURRING" ? campaignData.customInterval : undefined,
+          custom_unit: campaignData.recurrence === "RECURRING" ? campaignData.customUnit : undefined,
           timezone: campaignData.timezone
         }
         
-        payload.schedule_type = campaignData.recurrence === "once" ? "IMMEDIATE" : "SCHEDULED"
+        payload.schedule_type = campaignData.recurrence
         payload.schedule_json = JSON.stringify(scheduleData)
       }
+
+      // Add throttling and retry policy
+      payload.throttling = campaignData.throttling
+      payload.retry_policy = campaignData.retry_policy
 
       if (restProps.mode === "edit" && restProps.referenceId) {
         const res = await updateCampaign(restProps.referenceId, payload)
@@ -196,13 +362,13 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
       }
 
     toast({
-      title: "Campaign Created Successfully",
-        description: `${campaignData.name} has been created. Ref: ${createdRefId ?? "n/a"}`,
-      })
+      title: restProps.mode === "edit" ? "Campaign Updated Successfully" : "Campaign Created Successfully",
+      description: `${campaignData.name} has been ${restProps.mode === "edit" ? "updated" : "created"}. Ref: ${createdRefId ?? "n/a"}`,
+    })
       // Keep modal open; user can proceed steps normally
     } catch (err) {
       toast({
-        title: "Failed to create campaign",
+        title: restProps.mode === "edit" ? "Failed to update campaign" : "Failed to create campaign",
         description: err instanceof Error ? err.message : "Unknown error",
         variant: "destructive",
       })
@@ -217,7 +383,8 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
       case 2: return campaignData.channel !== ""
       case 3: return !!campaignData.segmentRefId
       case 4: return !!campaignData.scheduleDate && !!campaignData.startTime
-      case 5: return !!campaignData.templateId
+      case 5: return true // Throttling and retry policy step is always valid
+      case 6: return !!campaignData.templateId
       default: return true
     }
   }
@@ -236,13 +403,15 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
         templateName: restProps.initial?.templateName ?? prev.templateName,
         templateId: restProps.initial?.templateId ?? prev.templateId,
         template: restProps.initial?.templateBody ?? prev.template,
+        throttling: restProps.initial?.throttling ?? prev.throttling,
+        retry_policy: restProps.initial?.retry_policy ?? prev.retry_policy,
       }))
       setCreatedRefId(restProps.referenceId ?? null)
     }
   }, [open, restProps.mode, restProps.initial, restProps.referenceId])
 
   useEffect(() => {
-    if (!open || step !== 6 || !createdRefId) return
+    if (!open || step !== 7 || !createdRefId) return
     let isMounted = true
     setLoadingDetails(true)
     setDetailsError(null)
@@ -277,7 +446,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
         <DialogHeader>
           <DialogTitle>{restProps.mode === "edit" ? "Edit Campaign" : "Create Campaign"}</DialogTitle>
           <div className="flex items-center gap-2 mt-4">
-            {[1, 2, 3, 4, 5, 6].map((stepNum) => (
+            {[1, 2, 3, 4, 5, 6, 7].map((stepNum) => (
               <div key={stepNum} className="flex items-center">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
                   stepNum < step ? "bg-primary text-primary-foreground" :
@@ -286,7 +455,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
                 }`}>
                   {stepNum < step ? <Check className="w-4 h-4" /> : stepNum}
                 </div>
-                {stepNum < 6 && <div className={`w-8 h-0.5 ${stepNum < step ? "bg-primary" : "bg-muted"}`} />}
+                {stepNum < 7 && <div className={`w-8 h-0.5 ${stepNum < step ? "bg-primary" : "bg-muted"}`} />}
               </div>
             ))}
           </div>
@@ -467,7 +636,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
               </div>
 
               {/* Weekly Days Selection */}
-              {campaignData.recurrence === "weekly" && (
+              {campaignData.recurrence === "WEEKLY" && (
                 <div className="space-y-2">
                   <Label>Select Days</Label>
                   <div className="grid grid-cols-7 gap-2">
@@ -486,7 +655,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
               )}
 
               {/* Custom Interval */}
-              {campaignData.recurrence === "custom" && (
+              {campaignData.recurrence === "RECURRING" && (
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Interval</Label>
@@ -533,6 +702,156 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
           )}
 
           {step === 5 && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold">Throttling & Retry Policy</h3>
+              
+              {/* Throttling Settings */}
+              <div className="space-y-4">
+                <h4 className="text-md font-medium">Message Throttling</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Max Messages per Minute</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={campaignData.throttling.max_messages_per_minute}
+                      onChange={(e) => setCampaignData({
+                        ...campaignData,
+                        throttling: {
+                          ...campaignData.throttling,
+                          max_messages_per_minute: parseInt(e.target.value) || 100
+                        }
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Max Messages per Hour</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={campaignData.throttling.max_messages_per_hour}
+                      onChange={(e) => setCampaignData({
+                        ...campaignData,
+                        throttling: {
+                          ...campaignData.throttling,
+                          max_messages_per_hour: parseInt(e.target.value) || 1000
+                        }
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Max Messages per Day</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={campaignData.throttling.max_messages_per_day}
+                      onChange={(e) => setCampaignData({
+                        ...campaignData,
+                        throttling: {
+                          ...campaignData.throttling,
+                          max_messages_per_day: parseInt(e.target.value) || 10000
+                        }
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Burst Limit</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={campaignData.throttling.burst_limit}
+                      onChange={(e) => setCampaignData({
+                        ...campaignData,
+                        throttling: {
+                          ...campaignData.throttling,
+                          burst_limit: parseInt(e.target.value) || 50
+                        }
+                      })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Retry Policy Settings */}
+              <div className="space-y-4">
+                <h4 className="text-md font-medium">Retry Policy</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Max Retries</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="10"
+                      value={campaignData.retry_policy.max_retries}
+                      onChange={(e) => setCampaignData({
+                        ...campaignData,
+                        retry_policy: {
+                          ...campaignData.retry_policy,
+                          max_retries: parseInt(e.target.value) || 3
+                        }
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Retry Delay (minutes)</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={campaignData.retry_policy.retry_delay_minutes}
+                      onChange={(e) => setCampaignData({
+                        ...campaignData,
+                        retry_policy: {
+                          ...campaignData.retry_policy,
+                          retry_delay_minutes: parseInt(e.target.value) || 5
+                        }
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Backoff Multiplier</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      step="0.1"
+                      value={campaignData.retry_policy.backoff_multiplier}
+                      onChange={(e) => setCampaignData({
+                        ...campaignData,
+                        retry_policy: {
+                          ...campaignData.retry_policy,
+                          backoff_multiplier: parseFloat(e.target.value) || 2.0
+                        }
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Retry on Statuses</Label>
+                    <Select 
+                      value={campaignData.retry_policy.retry_on_statuses.join(",")} 
+                      onValueChange={(value) => setCampaignData({
+                        ...campaignData,
+                        retry_policy: {
+                          ...campaignData.retry_policy,
+                          retry_on_statuses: value ? value.split(",") : ["FAILED", "TIMEOUT"]
+                        }
+                      })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select statuses" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="FAILED,TIMEOUT">Failed & Timeout</SelectItem>
+                        <SelectItem value="FAILED">Failed Only</SelectItem>
+                        <SelectItem value="TIMEOUT">Timeout Only</SelectItem>
+                        <SelectItem value="FAILED,TIMEOUT,REJECTED">Failed, Timeout & Rejected</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 6 && (
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Message Template</h3>
               <div className="space-y-2">
@@ -588,7 +907,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
             </div>
           )}
 
-          {step === 6 && (
+          {step === 7 && (
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Preview & Launch</h3>
               {createdRefId && (
@@ -607,8 +926,8 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
                 <CardContent className="space-y-3">
                   <div><strong>Name:</strong> {campaignDetails?.name ?? campaignData.name}</div>
                   <div><strong>Channel:</strong> {campaignDetails?.channelName ?? campaignData.channel}</div>
-                  <div><strong>Segment ID:</strong> {campaignDetails?.segmentId ?? (campaignData.segmentId ?? "-")}</div>
-                  <div><strong>Template ID:</strong> {campaignDetails?.messageTemplateId ?? (campaignData.templateId ?? "-")}</div>
+                  <div><strong>Segment Name:</strong> {campaignDetails?.segment?.name ?? campaignData.segment ?? "-"}</div>
+                  <div><strong>Template Name:</strong> {campaignDetails?.message_template?.name ?? campaignData.templateName ?? "-"}</div>
                   <div><strong>Status:</strong> {campaignDetails?.status ?? "-"}</div>
                   {campaignDetails?.description || campaignData.description ? (
                     <div><strong>Description:</strong> {campaignDetails?.description ?? campaignData.description}</div>
@@ -619,11 +938,42 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
                   {campaignData.recurrence !== "once" && (
                     <div><strong>Recurrence:</strong> {recurrenceOptions.find(r => r.value === campaignData.recurrence)?.label}</div>
                   )}
+                  <div><strong>Throttling:</strong> {campaignData.throttling.max_messages_per_minute} msg/min, {campaignData.throttling.max_messages_per_hour} msg/hour</div>
+                  <div><strong>Retry Policy:</strong> {campaignData.retry_policy.max_retries} retries, {campaignData.retry_policy.retry_delay_minutes} min delay</div>
                 </CardContent>
               </Card>
             </div>
           )}
         </div>
+
+        {/* Save Progress Button */}
+        {step < 7 && (
+          <div className="flex flex-col items-center gap-2 mt-6">
+            <Button 
+              variant="outline" 
+              onClick={async () => await savePartialCampaign(step)}
+              disabled={saving || !isStepValid()}
+              className="w-full max-w-xs"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save Progress
+                </>
+              )}
+            </Button>
+            {lastSaved && (
+              <div className="text-xs text-muted-foreground">
+                Last saved: {new Date(lastSaved).toLocaleTimeString()}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex justify-between mt-8">
           <Button variant="outline" onClick={prevStep} disabled={step === 1}>
@@ -631,27 +981,29 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
             Previous
           </Button>
           
-          {step < 6 ? (
+          {step < 7 ? (
             <Button onClick={async () => {
-              // Only create the campaign after required selections (end of step 5)
-              if (step < 5) {
-                nextStep()
+              // Only create the campaign after required selections (end of step 6)
+              if (step < 6) {
+                await nextStep()
                 return
               }
-              if (step === 5) {
+              if (step === 6) {
                 await handleSubmit()
-                nextStep()
+                await nextStep()
                 return
               }
-              nextStep()
+              await nextStep()
             }} disabled={
               (step === 1 && campaignData.name.trim() === "") ||
               (step === 2 && !campaignData.channel) ||
               (step === 3 && !campaignData.segmentRefId) ||
               (step === 4 && (!campaignData.scheduleDate || !campaignData.startTime)) ||
-              (step === 5 && (!campaignData.templateId || creating))
+              (step === 5 && false) || // Throttling step is always valid
+              (step === 6 && (!campaignData.templateId || creating)) ||
+              saving // Disable button while saving
             }>
-              Next
+              {saving ? "Saving..." : "Next"}
               <ChevronRight className="w-4 h-4 ml-2" />
             </Button>
           ) : (

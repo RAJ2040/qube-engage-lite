@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { DateRangeFilter } from "@/components/DateRangeFilter"
 import {
   Pagination,
   PaginationContent,
@@ -46,7 +47,14 @@ export default function Events() {
   const [searchTerm, setSearchTerm] = useState("")
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [page, setPage] = useState(1)
+  const [selectedDateRange, setSelectedDateRange] = useState("last-7-days")
   const limit = 20
+
+  const handleDateFilterChange = (range: string, startDate?: Date, endDate?: Date) => {
+    setSelectedDateRange(range)
+    console.log("Date filter changed:", { range, startDate, endDate })
+    // In a real app, this would trigger API calls to refresh events data
+  }
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["events", { page, limit, sortBy: "event_time", sortDir: "desc" }],
@@ -150,6 +158,7 @@ export default function Events() {
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
+              <DateRangeFilter onFilterChange={handleDateFilterChange} />
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                 <Input

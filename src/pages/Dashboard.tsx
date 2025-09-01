@@ -1,6 +1,11 @@
+import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { StatsCard } from "@/components/Dashboard/StatsCard"
 import { ActivityChart } from "@/components/Dashboard/ActivityChart"
 import { RecentActivity } from "@/components/Dashboard/RecentActivity"
+import { CreateSegmentModal } from "@/components/Modals/CreateSegmentModal"
+import { CreateCampaignModal } from "@/components/Modals/CreateCampaignModal"
+import { CreateEventModal } from "@/components/Modals/CreateEventModal"
 import { 
   Users, 
   MessageSquare, 
@@ -16,6 +21,11 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 
 export default function Dashboard() {
+  const navigate = useNavigate()
+  const [showSegmentModal, setShowSegmentModal] = useState(false)
+  const [showCampaignModal, setShowCampaignModal] = useState(false)
+  const [showEventModal, setShowEventModal] = useState(false)
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -26,7 +36,10 @@ export default function Dashboard() {
             Welcome back! Here's what's happening with your campaigns.
           </p>
         </div>
-        <Button className="bg-gradient-primary hover:opacity-90 text-white shadow-glow">
+        <Button 
+          className="bg-gradient-primary hover:opacity-90 text-white shadow-glow"
+          onClick={() => setShowCampaignModal(true)}
+        >
           Create Campaign
         </Button>
       </div>
@@ -44,7 +57,6 @@ export default function Dashboard() {
           value="12"
           change={{ value: "+2", trend: "up" }}
           icon={MessageSquare}
-          gradient
         />
         <StatsCard
           title="Events Captured"
@@ -80,32 +92,48 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" className="justify-start h-auto p-4 flex-col items-start gap-2">
-                <Users className="w-5 h-5 text-primary" />
+              <Button 
+                variant="outline" 
+                className="justify-start h-auto p-4 flex-col items-start gap-2 hover:bg-primary hover:text-primary-foreground transition-colors"
+                onClick={() => setShowSegmentModal(true)}
+              >
+                <Users className="w-5 h-5" />
                 <div className="text-left">
                   <div className="font-medium">Create Segment</div>
-                  <div className="text-xs text-muted-foreground">Build user groups</div>
+                  <div className="text-xs opacity-80">Build user groups</div>
                 </div>
               </Button>
-              <Button variant="outline" className="justify-start h-auto p-4 flex-col items-start gap-2">
-                <MessageSquare className="w-5 h-5 text-primary" />
+              <Button 
+                variant="outline" 
+                className="justify-start h-auto p-4 flex-col items-start gap-2 hover:bg-primary hover:text-primary-foreground transition-colors"
+                onClick={() => setShowCampaignModal(true)}
+              >
+                <MessageSquare className="w-5 h-5" />
                 <div className="text-left">
                   <div className="font-medium">New Campaign</div>
-                  <div className="text-xs text-muted-foreground">Send messages</div>
+                  <div className="text-xs opacity-80">Send messages</div>
                 </div>
               </Button>
-              <Button variant="outline" className="justify-start h-auto p-4 flex-col items-start gap-2">
-                <Zap className="w-5 h-5 text-primary" />
+              <Button 
+                variant="outline" 
+                className="justify-start h-auto p-4 flex-col items-start gap-2 hover:bg-primary hover:text-primary-foreground transition-colors"
+                onClick={() => setShowEventModal(true)}
+              >
+                <Zap className="w-5 h-5" />
                 <div className="text-left">
                   <div className="font-medium">Track Events</div>
-                  <div className="text-xs text-muted-foreground">Monitor activity</div>
+                  <div className="text-xs opacity-80">Monitor activity</div>
                 </div>
               </Button>
-              <Button variant="outline" className="justify-start h-auto p-4 flex-col items-start gap-2">
-                <TrendingUp className="w-5 h-5 text-primary" />
+              <Button 
+                variant="outline" 
+                className="justify-start h-auto p-4 flex-col items-start gap-2 hover:bg-primary hover:text-primary-foreground transition-colors"
+                onClick={() => navigate("/analytics")}
+              >
+                <TrendingUp className="w-5 h-5" />
                 <div className="text-left">
                   <div className="font-medium">View Reports</div>
-                  <div className="text-xs text-muted-foreground">Analyze performance</div>
+                  <div className="text-xs opacity-80">Analyze performance</div>
                 </div>
               </Button>
             </div>
@@ -160,6 +188,20 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Modals */}
+      <CreateSegmentModal 
+        open={showSegmentModal} 
+        onOpenChange={setShowSegmentModal} 
+      />
+      <CreateCampaignModal 
+        open={showCampaignModal} 
+        onOpenChange={setShowCampaignModal} 
+      />
+      <CreateEventModal 
+        open={showEventModal} 
+        onOpenChange={setShowEventModal} 
+      />
     </div>
   )
 }

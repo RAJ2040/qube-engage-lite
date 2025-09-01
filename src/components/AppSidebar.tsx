@@ -1,11 +1,9 @@
 import { NavLink, useLocation } from "react-router-dom"
 import {
   BarChart3,
-  Calendar,
   GitBranch,
   Home,
   MessageSquare,
-  Radio,
   Settings,
   Users,
   Zap
@@ -32,6 +30,8 @@ const navigationItems = [
   { title: "Campaigns", url: "/campaigns", icon: MessageSquare },
   { title: "Journeys", url: "/journeys", icon: GitBranch },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
+  { title: "Users", url: "/users", icon: Users },
+  { title: "Consumers", url: "/consumers", icon: Users },
 ]
 
 const bottomItems = [
@@ -61,7 +61,6 @@ export function AppSidebar() {
           {!collapsed && (
             <div className="flex flex-col">
               <h1 className="text-xl font-bold text-gradient-primary">QubeEngage</h1>
-              <p className="text-xs text-muted-foreground">Marketing Automation</p>
             </div>
           )}
         </div>
@@ -69,12 +68,6 @@ export function AppSidebar() {
 
       <SidebarContent className="px-3">
         <SidebarGroup>
-          <SidebarGroupLabel className={cn(
-            "mb-2",
-            collapsed && "sr-only"
-          )}>
-            Main
-          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu className="space-y-1">
               {navigationItems.map((item) => (

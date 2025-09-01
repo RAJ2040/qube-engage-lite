@@ -29,7 +29,10 @@ export function StatsCard({
       className
     )}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
+        <CardTitle className={cn(
+          "text-sm font-medium",
+          gradient ? "text-white/90" : "text-muted-foreground"
+        )}>
           {title}
         </CardTitle>
         <div className={cn(
@@ -43,16 +46,22 @@ export function StatsCard({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold text-foreground mb-1">
+        <div className={cn(
+          "text-2xl font-bold mb-1",
+          gradient ? "text-white" : "text-foreground"
+        )}>
           {value}
         </div>
         {change && (
-          <p className="text-xs text-muted-foreground">
+          <p className={cn(
+            "text-xs",
+            gradient ? "text-white/80" : "text-muted-foreground"
+          )}>
             <span className={cn(
               "font-medium",
-              change.trend === 'up' && "text-success",
-              change.trend === 'down' && "text-destructive",
-              change.trend === 'neutral' && "text-muted-foreground"
+              gradient ? "text-white" : change.trend === 'up' && "text-success",
+              !gradient && change.trend === 'down' && "text-destructive",
+              !gradient && change.trend === 'neutral' && "text-muted-foreground"
             )}>
               {change.value}
             </span>
@@ -60,10 +69,6 @@ export function StatsCard({
           </p>
         )}
       </CardContent>
-      
-      {gradient && (
-        <div className="absolute inset-0 bg-gradient-primary opacity-90 -z-10 rounded-lg" />
-      )}
     </Card>
   )
 }

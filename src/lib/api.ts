@@ -215,6 +215,18 @@ export interface CreateCampaignRequest {
     message_template_id?: string
     schedule_type?: string
     schedule_json?: string
+    throttling?: {
+        max_messages_per_minute: number
+        max_messages_per_hour: number
+        max_messages_per_day: number
+        burst_limit: number
+    }
+    retry_policy?: {
+        max_retries: number
+        retry_delay_minutes: number
+        backoff_multiplier: number
+        retry_on_statuses: string[]
+    }
 }
 
 export interface CreateCampaignResponseData {
@@ -259,6 +271,8 @@ export interface CampaignDetailsData {
     scheduleType?: string
     scheduleJson?: string | null
     policyJson?: string | null
+    throttlingJson?: string | null
+    retryPolicyJson?: string | null
     status: string
     statusReason?: string | null
     isActive: number
@@ -395,14 +409,14 @@ export function fetchOperatorsCatalog() {
 
 // Segment definition, preview, and create
 export interface SegmentEventFilter {
-	name: string
+	name: { operator: string; value: string }
 	userId?: string
-	prop?: Record<string, unknown>
+	prop?: Record<string, { operator: string; value: unknown }>
 	eventTime?: { start?: string; end?: string }
 }
 
 export interface SegmentDefinition {
-	criteria?: Record<string, unknown>
+	criteria?: Record<string, { operator: string; value: unknown }>
 	anyOfEvents?: Array<{ event: SegmentEventFilter }>
 }
 
@@ -469,26 +483,26 @@ export function createSegment(body: CreateSegmentRequest) {
 // Campaigns listing API
 export interface CampaignListItem {
     id: number
-    referenceId: string
+    reference_id: string  // Changed from referenceId to reference_id to match API
     name: string
     description: string
-    targetType: string
-    segmentId?: string
-    audienceJson?: string | null
-    channelName?: string
-    messageTemplateId?: string
-    channelJson?: string | null
-    scheduleType?: string
-    scheduleJson?: string | null
-    policyJson?: string | null
+    target_type: string  // Changed from targetType to target_type
+    segment_id?: string  // Changed from segmentId to segment_id
+    audience_json?: string | null  // Changed from audienceJson to audience_json
+    channel_name?: string  // Changed from channelName to channel_name
+    message_template_id?: string  // Changed from messageTemplateId to message_template_id
+    channel_json?: string | null  // Changed from channelJson to channel_json
+    schedule_type?: string  // Changed from scheduleType to schedule_type
+    schedule_json?: string | null  // Changed from scheduleJson to schedule_json
+    policy_json?: string | null  // Changed from policyJson to policy_json
     status: string
-    statusReason?: string | null
-    isActive: number
-    createdBy?: string
-    updatedBy?: string
-    createdAt: number
-    updatedAt: number
-    deletedAt?: number | null
+    status_reason?: string | null  // Changed from statusReason to status_reason
+    is_active: number  // Changed from isActive to is_active
+    created_by?: string  // Changed from createdBy to created_by
+    updated_by?: string  // Changed from updatedBy to updated_by
+    created_at: number  // Changed from createdAt to created_at
+    updated_at: number  // Changed from updatedAt to updated_at
+    deleted_at?: number | null  // Changed from deletedAt to deleted_at
 }
 
 export interface CampaignsPayload {
@@ -505,6 +519,20 @@ export function fetchCampaigns(params: { page?: number; limit?: number }) {
     if (params.limit) search.set("limit", params.limit.toString())
     const qs = search.toString()
     return httpGet<ApiResponse<CampaignsPayload>>(`/app/campaigns${qs ? `?${qs}` : ""}`, {
+        headers: { "Content-Type": "application/json" },
+    })
+}
+
+// Field Catalog API
+export interface FieldCatalogData {
+    fieldName: string
+    fieldType: string
+    values: string[]
+    total: number
+}
+
+export function fetchFieldCatalog(fieldName: string) {
+    return httpGet<ApiResponse<FieldCatalogData>>(`/app/events/catalog/field/${fieldName}`, {
         headers: { "Content-Type": "application/json" },
     })
 }
