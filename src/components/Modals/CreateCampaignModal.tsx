@@ -76,9 +76,9 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
     startTime?: string;
     endTime?: string;
     recurrence?: string;
-    selectedWeekDays?: string[];
-    customInterval?: number;
-    customUnit?: string;
+    weekly_days?: string[];
+    custom_interval?: number;
+    custom_unit?: string;
     timezone?: string;
     // Throttling and retry policy
     throttling?: {
@@ -111,9 +111,9 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
     startTime: "",
     endTime: "",
     recurrence: "IMMEDIATE",
-    selectedWeekDays: [] as string[],
-    customInterval: 1,
-    customUnit: "days",
+    weekly_days: [] as string[],
+    custom_interval: 1,
+    custom_unit: "days",
     timezone: "Asia/Kolkata",
     // Throttling and retry policy
     throttling: {
@@ -375,9 +375,9 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
           start_time: campaignData.startTime,
           end_time: campaignData.endTime || undefined,
           recurrence: campaignData.recurrence,
-          weekly_days: campaignData.selectedWeekDays.length > 0 ? campaignData.selectedWeekDays.map(day => day.toUpperCase()) : undefined,
-          custom_interval: campaignData.recurrence === "RECURRING" ? campaignData.customInterval : undefined,
-          custom_unit: campaignData.recurrence === "RECURRING" ? campaignData.customUnit : undefined,
+          weekly_days: campaignData.weekly_days.length > 0 ? campaignData.weekly_days.map(day => day.toUpperCase()) : undefined,
+          custom_interval: campaignData.recurrence === "RECURRING" ? campaignData.custom_interval : undefined,
+          custom_unit: campaignData.recurrence === "RECURRING" ? campaignData.custom_unit : undefined,
           timezone: campaignData.timezone
         }
         
@@ -457,9 +457,9 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
         startTime: restProps.initial?.startTime ?? prev.startTime,
         endTime: restProps.initial?.endTime ?? prev.endTime,
         recurrence: restProps.initial?.recurrence ?? prev.recurrence,
-        selectedWeekDays: restProps.initial?.selectedWeekDays ?? prev.selectedWeekDays,
-        customInterval: restProps.initial?.customInterval ?? prev.customInterval,
-        customUnit: restProps.initial?.customUnit ?? prev.customUnit,
+        weekly_days: restProps.initial?.weekly_days ?? prev.weekly_days,
+        custom_interval: restProps.initial?.custom_interval ?? prev.custom_interval,
+        custom_unit: restProps.initial?.custom_unit ?? prev.custom_unit,
         timezone: restProps.initial?.timezone ?? prev.timezone,
       }))
       setCreatedRefId(restProps.referenceId ?? null)
@@ -490,9 +490,9 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
   const toggleWeekDay = (day: string) => {
     setCampaignData(prev => ({
       ...prev,
-      selectedWeekDays: prev.selectedWeekDays.includes(day)
-        ? prev.selectedWeekDays.filter(d => d !== day)
-        : [...prev.selectedWeekDays, day]
+      weekly_days: prev.weekly_days.includes(day)
+        ? prev.weekly_days.filter(d => d !== day)
+        : [...prev.weekly_days, day]
     }))
   }
 
@@ -726,7 +726,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
                     {weekDays.map((day) => (
                       <Button
                         key={day.value}
-                        variant={campaignData.selectedWeekDays.includes(day.value) ? "default" : "outline"}
+                        variant={campaignData.weekly_days.includes(day.value) ? "default" : "outline"}
                         size="sm"
                         onClick={() => toggleWeekDay(day.value)}
                       >
@@ -745,13 +745,13 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
                     <Input
                       type="number"
                       min="1"
-                      value={campaignData.customInterval}
-                      onChange={(e) => setCampaignData({ ...campaignData, customInterval: parseInt(e.target.value) || 1 })}
+                      value={campaignData.custom_interval}
+                      onChange={(e) => setCampaignData({ ...campaignData, custom_interval: parseInt(e.target.value) || 1 })}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>Unit</Label>
-                    <Select value={campaignData.customUnit} onValueChange={(value) => setCampaignData({ ...campaignData, customUnit: value })}>
+                                         <Select value={campaignData.custom_unit} onValueChange={(value) => setCampaignData({ ...campaignData, custom_unit: value })}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>

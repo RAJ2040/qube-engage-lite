@@ -727,44 +727,46 @@ export function CreateSegmentModal({ open, onOpenChange, mode = "create", segmen
      return html
    }
 
-    const handleSave = async () => {
-    try {
-      const definition = buildDefinition()
-      
-      if (mode === "edit" && segmentId) {
-        // Update existing segment
-        await updateSegment(segmentId, {
-          name: segmentName,
-          description: "",
-          definition
-        })
-        toast({ title: "Segment Updated Successfully", description: `${segmentName} has been updated.` })
-      } else {
-        // Create new segment
-        await createSegment({
-          name: segmentName,
-          description: "",
-          status: "DRAFT",
-          is_active: 1,
-          definition,
-        })
-        toast({ title: "Segment Created Successfully", description: `${segmentName} has been saved.` })
-      }
-      
-      onOpenChange(false)
-      setSegmentName("")
-      setFilters([])
-      setPreviewItems([])
-      setPreviewCount(0)
-      
-      // Call refresh callback to update the segments list
-      if (onSegmentSaved) {
-        onSegmentSaved()
-      }
-    } catch (err) {
-      toast({ title: mode === "edit" ? "Update failed" : "Create failed", description: err instanceof Error ? err.message : String(err) })
-    }
-  }
+         const handleSave = async () => {
+     try {
+       const definition = buildDefinition()
+       
+       if (mode === "edit" && segmentId) {
+         // Update existing segment
+         await updateSegment(segmentId, {
+           name: segmentName,
+           description: "",
+           definition,
+           status: "DRAFT",
+           is_active: 1
+         })
+         toast({ title: "Segment Updated Successfully", description: `${segmentName} has been updated.` })
+       } else {
+         // Create new segment
+         await createSegment({
+           name: segmentName,
+           description: "",
+           status: "DRAFT",
+           is_active: 1,
+           definition,
+         })
+         toast({ title: "Segment Created Successfully", description: `${segmentName} has been saved.` })
+       }
+       
+       onOpenChange(false)
+       setSegmentName("")
+       setFilters([])
+       setPreviewItems([])
+       setPreviewCount(0)
+       
+       // Call refresh callback to update the segments list
+       if (onSegmentSaved) {
+         onSegmentSaved()
+       }
+     } catch (err) {
+       toast({ title: mode === "edit" ? "Update failed" : "Create failed", description: err instanceof Error ? err.message : String(err) })
+     }
+   }
 
   const hasAnyDefinition = () => {
     const hasUserCriteria = filters.some(f => f.entity === "Users" && f.field && f.value !== "")

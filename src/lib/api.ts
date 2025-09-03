@@ -204,9 +204,9 @@ export function fetchSegmentById(referenceId: string) {
     return httpGet<ApiResponse<{ items: SegmentItem[] }>>(`/app/segments?reference_id=${referenceId}`)
 }
 
-export function updateSegment(id: string, payload: { name: string; description: string; definition: SegmentDefinition }) {
+export function updateSegment(referenceId: string, payload: { name: string; description: string; definition: SegmentDefinition; status?: string; is_active?: number }) {
     return httpPatch<ApiResponse<{ id: number; reference_id: string }>, typeof payload>(
-        `/app/segments/${id}`,
+        `/app/segments/${referenceId}`,
         payload,
         { headers: { "Content-Type": "application/json" } }
     )
