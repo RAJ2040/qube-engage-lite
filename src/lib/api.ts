@@ -157,14 +157,19 @@ export function fetchEvents(params?: {
 // Segments API
 export interface SegmentItem {
     id: number
-    referenceId: string
+    reference_id?: string
+    referenceId?: string
     name: string
     description?: string
     filters?: string
     status?: string
+    is_active?: number
     isActive?: number
+    created_at?: number
     createdAt?: number
+    updated_at?: number
     updatedAt?: number
+    definition?: SegmentDefinition
 }
 
 export interface SegmentsPayload {
@@ -193,6 +198,18 @@ export function searchSegments(query: string, params?: { page?: number; limit?: 
     if (params?.limit) search.set("limit", String(params.limit))
     const qs = search.toString()
     return httpGet<ApiResponse<SegmentsPayload>>(`/app/segments${qs ? `?${qs}` : ""}`)
+}
+
+export function fetchSegmentById(id: string) {
+    return httpGet<ApiResponse<SegmentItem>>(`/app/segments/${id}`)
+}
+
+export function updateSegment(id: string, payload: { name: string; description: string; definition: SegmentDefinition }) {
+    return httpPatch<ApiResponse<{ id: number; reference_id: string }>, typeof payload>(
+        `/app/segments/${id}`,
+        payload,
+        { headers: { "Content-Type": "application/json" } }
+    )
 }
 
 // Campaigns API
@@ -281,6 +298,16 @@ export interface CampaignDetailsData {
     createdAt: number
     updatedAt: number
     deletedAt?: number | null
+    // Additional fields from actual API response
+    segment?: {
+        id: string
+        name: string
+    }
+    message_template?: {
+        id: string
+        name: string
+        body: string
+    }
 }
 
 export function fetchCampaignByRef(referenceId: string) {

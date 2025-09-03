@@ -25,6 +25,7 @@ import {
   type FieldCatalogData,
   previewSegment,
   createSegment,
+  updateSegment,
   type SegmentsPreviewItem,
   type SegmentDefinition,
 } from "@/lib/api"
@@ -32,6 +33,14 @@ import {
 interface CreateSegmentModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  mode?: "create" | "edit"
+  segmentId?: string | null
+  initial?: {
+    name?: string
+    description?: string
+    definition?: SegmentDefinition
+  }
+  onSegmentSaved?: () => void
 }
 
 type CatalogType = "string" | "number" | "date" | "bool"
@@ -47,12 +56,13 @@ type FilterRow = {
   props?: Array<{ id: string; field: string; fieldType?: CatalogType; operator: string; value: string }>
 }
 
-export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalProps) {
+export function CreateSegmentModal({ open, onOpenChange, mode = "create", segmentId, initial, onSegmentSaved }: CreateSegmentModalProps) {
   const [segmentName, setSegmentName] = useState("")
   const [filters, setFilters] = useState<FilterRow[]>([])
   const [loading, setLoading] = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewItems, setPreviewItems] = useState<SegmentsPreviewItem[]>([])
+  const [previewCount, setPreviewCount] = useState<number>(0)
   const [eventsCatalog, setEventsCatalog] = useState<EventsCatalogItem[]>([])
   const [userPropsCatalog, setUserPropsCatalog] = useState<UserPropsCatalogPayload | null>(null)
   const [operatorsCatalog, setOperatorsCatalog] = useState<OperatorsCatalogPayload | null>(null)
@@ -84,6 +94,70 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
       .finally(() => mounted && setLoading(false))
     return () => { mounted = false }
   }, [open])
+
+  // Load segment data when in edit mode
+  useEffect(() => {
+    if (!open || mode !== "edit" || !segmentId || !initial) return
+    
+    setSegmentName(initial.name || "")
+    if (initial.definition) {
+      // Convert definition back to filters
+      const newFilters: FilterRow[] = []
+      
+      // Handle user criteria
+      if (initial.definition.criteria) {
+        Object.entries(initial.definition.criteria).forEach(([field, config]) => {
+          if (typeof config === 'object' && config.operator && config.value !== undefined) {
+            newFilters.push({
+              id: Date.now().toString() + Math.random(),
+              entity: "Users",
+              field,
+              fieldType: typeof config.value === 'number' ? 'number' : 
+                         typeof config.value === 'boolean' ? 'bool' : 'string',
+              operator: config.operator,
+              value: String(config.value)
+            })
+          }
+        })
+      }
+      
+      // Handle event criteria
+      if (initial.definition.anyOfEvents) {
+        initial.definition.anyOfEvents.forEach((eventObj: any) => {
+          if (eventObj.name && eventObj.name.operator === 'eq') {
+            const eventFilter: FilterRow = {
+              id: Date.now().toString() + Math.random(),
+              entity: "Events",
+              eventName: eventObj.name.value,
+              field: "",
+              fieldType: undefined,
+              operator: "eq",
+              value: "",
+              props: []
+            }
+            
+            // Add event properties
+            Object.entries(eventObj).forEach(([key, config]) => {
+              if (key !== 'name' && typeof config === 'object' && config.operator && config.value !== undefined) {
+                eventFilter.props!.push({
+                  id: Date.now().toString() + Math.random(),
+                  field: key,
+                  fieldType: typeof config.value === 'number' ? 'number' : 
+                             typeof config.value === 'boolean' ? 'bool' : 'string',
+                  operator: config.operator,
+                  value: String(config.value)
+                })
+              }
+            })
+            
+            newFilters.push(eventFilter)
+          }
+        })
+      }
+      
+      setFilters(newFilters)
+    }
+  }, [open, mode, segmentId, initial])
 
   const addFilter = () => {
     const newFilter = {
@@ -157,6 +231,27 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
     return 'dropdown' // Default to dropdown for other string fields
   }
 
+  // Function to determine input type for event properties
+  const getEventFieldInputType = (fieldName: string, fieldType?: CatalogType) => {
+    // Special event fields that might need specific input types
+    if (fieldName === 'event_time' || fieldName === 'timestamp') {
+      return 'time'
+    }
+    if (fieldName === 'event_date' || fieldName === 'date') {
+      return 'date'
+    }
+    if (fieldType === 'date') {
+      return 'date'
+    }
+    if (fieldType === 'number') {
+      return 'number'
+    }
+    if (fieldType === 'bool') {
+      return 'boolean'
+    }
+    return 'text' // Default to text input for other types
+  }
+
   const applicableOperators = (type?: CatalogType) => {
     if (!operatorsCatalog || !type) return ["eq"]
     return operatorsCatalog[type] ?? ["eq"]
@@ -219,7 +314,7 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
           }
         }
         
-        return { event: eventObj }
+        return eventObj
       })
 
     const userPropFilters = filters.filter(f => f.entity === "Users" && f.field && f.value !== "")
@@ -232,9 +327,8 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
     }, {})
 
     const definition: SegmentDefinition = {}
-    if (Object.keys(criteriaProps).length > 0) {
-      definition.criteria = { ...criteriaProps }
-    }
+    // Always include criteria field, even if empty
+    definition.criteria = { ...criteriaProps }
     if (anyOfEvents.length > 0) definition.anyOfEvents = anyOfEvents
     return definition
   }
@@ -246,6 +340,25 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
         return Number(val)
       case "bool":
         return val === "true" || val === "1"
+      case "date":
+        // For date fields, ensure proper MySQL datetime format
+        // If the value is already in yyyy-MM-dd format, keep it
+        // If it's a time value (HH:mm), combine with current date
+        if (val.match(/^\d{2}:\d{2}$/)) {
+          // Time value like "14:30" - combine with current date
+          const today = new Date()
+          const [hours, minutes] = val.split(':')
+          today.setHours(parseInt(hours), parseInt(minutes), 0, 0)
+          return format(today, "yyyy-MM-dd HH:mm:ss")
+        } else if (val.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          // Date value like "2025-01-20" - convert to datetime
+          return val + " 00:00:00"
+        } else if (val.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
+          // Already in correct format
+          return val
+        }
+        // Fallback: return as-is
+        return val
       default:
         return val
     }
@@ -259,7 +372,7 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
       const definition = buildDefinition()
       console.log("Preview payload:", JSON.stringify({ definition }, null, 2))
       const res = await previewSegment({ definition, page: 1, limit: 20, sortBy: "event_time", sortDir: "desc" })
-      setPreviewItems(res.data.items || [])
+      setPreviewCount(res.data.total || res.data.items?.length || 0)
     } catch (err) {
       toast({ title: "Preview failed", description: err instanceof Error ? err.message : String(err) })
     } finally {
@@ -267,30 +380,299 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
     }
   }
 
-  const handleSave = async () => {
+  const [downloadFormat, setDownloadFormat] = useState<string>("csv")
+
+  const handleDownload = async () => {
     try {
       const definition = buildDefinition()
-      console.log("Save payload:", JSON.stringify({ 
-        name: segmentName,
-        description: "",
-        status: "DRAFT",
-        is_active: 1,
-        definition 
-      }, null, 2))
-      await createSegment({
-        name: segmentName,
-        description: "",
-        status: "DRAFT",
-        is_active: 1,
-        definition,
+      console.log("Download payload:", JSON.stringify({ definition }, null, 2))
+      
+      // Call the export API using the API function (which handles base URL)
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/app/segments/preview/export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ definition }),
       })
-      toast({ title: "Segment Created Successfully", description: `${segmentName} has been saved.` })
-    onOpenChange(false)
-    setSegmentName("")
-    setFilters([])
-      setPreviewItems([])
+
+      console.log("Response status:", response.status)
+      console.log("Response status text:", response.statusText)
+      console.log("Response headers:", Object.fromEntries(response.headers.entries()))
+      console.log("Response URL:", response.url)
+
+      if (!response.ok) {
+        throw new Error(`Export failed: ${response.status} ${response.statusText}`)
+      }
+
+      // Check content type first
+      const contentType = response.headers.get('content-type')
+      console.log("Content-Type:", contentType)
+      
+      if (!contentType || !contentType.includes('application/json')) {
+        // If not JSON, get the text to see what we're actually receiving
+        const textResponse = await response.text()
+        console.error("Expected JSON but received:", textResponse.substring(0, 500))
+        console.error("Full response length:", textResponse.length)
+        throw new Error(`Expected JSON response but received ${contentType || 'unknown content type'}`)
+      }
+
+      // Parse the JSON response to get base64 data
+      const responseData = await response.json()
+      
+      if (!responseData.status || !responseData.data) {
+        throw new Error('Invalid response format')
+      }
+
+      // Decode base64 data
+      const decodedData = atob(responseData.data)
+      const jsonData = JSON.parse(decodedData)
+      
+      console.log("Decoded data:", jsonData)
+      
+             // Convert data to selected format
+       let fileContent: string | ArrayBuffer
+       let fileName: string
+       let mimeType: string
+      
+             switch (downloadFormat) {
+         case "csv":
+           fileContent = convertToCSV(jsonData.items || [])
+           fileName = `segment_preview_${Date.now()}.csv`
+           mimeType = 'text/csv;charset=utf-8;'
+           break
+         case "json":
+           fileContent = JSON.stringify(jsonData, null, 2)
+           fileName = `segment_preview_${Date.now()}.json`
+           mimeType = 'application/json'
+           break
+         case "txt":
+           fileContent = convertToText(jsonData.items || [])
+           fileName = `segment_preview_${Date.now()}.txt`
+           mimeType = 'text/plain;charset=utf-8;'
+           break
+         case "xlsx":
+           // For Excel, we'll create a proper XLSX file
+           fileContent = convertToXLSX(jsonData.items || [])
+           fileName = `segment_preview_${Date.now()}.xlsx`
+           mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+           break
+         case "pdf":
+           // For PDF, we'll create HTML that can be converted to PDF
+           fileContent = convertToHTML(jsonData.items || [])
+           fileName = `segment_preview_${Date.now()}.pdf`
+           mimeType = 'application/pdf'
+           break
+         case "docx":
+           // For Word, we'll create HTML that can be converted to DOCX
+           fileContent = convertToHTML(jsonData.items || [])
+           fileName = `segment_preview_${Date.now()}.docx`
+           mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+           break
+         case "html":
+           // Separate HTML option
+           fileContent = convertToHTML(jsonData.items || [])
+           fileName = `segment_preview_${Date.now()}.html`
+           mimeType = 'text/html;charset=utf-8;'
+           break
+         default:
+           fileContent = convertToCSV(jsonData.items || [])
+           fileName = `segment_preview_${Date.now()}.csv`
+           mimeType = 'text/csv;charset=utf-8;'
+       }
+      
+      // Create a blob from the content
+      const blob = new Blob([fileContent], { type: mimeType })
+      
+      // Create a download link
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      
+      // Cleanup
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      
+      toast({ title: "Download Started", description: `${downloadFormat.toUpperCase()} file download has begun.` })
     } catch (err) {
-      toast({ title: "Create failed", description: err instanceof Error ? err.message : String(err) })
+      toast({ title: "Download failed", description: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  // Helper function to convert data to CSV
+  const convertToCSV = (items: any[]): string => {
+    if (!items || items.length === 0) return "No data available"
+    
+    const headers = Object.keys(items[0]).filter(key => key !== 'id' && key !== 'properties')
+    const csvRows = [headers.join(',')]
+    
+    items.forEach(item => {
+      const row = headers.map(header => {
+        const value = item[header]
+        if (value === null || value === undefined) return ''
+        if (typeof value === 'string' && value.includes(',')) return `"${value}"`
+        return String(value)
+      })
+      csvRows.push(row.join(','))
+    })
+    
+    return csvRows.join('\n')
+  }
+
+  // Helper function to convert data to plain text
+  const convertToText = (items: any[]): string => {
+    if (!items || items.length === 0) return "No data available"
+    
+    let text = "Segment Preview Data\n"
+    text += "=".repeat(50) + "\n\n"
+    
+    items.forEach((item, index) => {
+      text += `Record ${index + 1}:\n`
+      text += "-".repeat(30) + "\n"
+      
+      Object.entries(item).forEach(([key, value]) => {
+        if (key !== 'id' && key !== 'properties') {
+          text += `${key}: ${value || 'N/A'}\n`
+        }
+      })
+      text += "\n"
+    })
+    
+    return text
+  }
+
+     // Helper function to convert data to XLSX (proper Excel format)
+   const convertToXLSX = (items: any[]): ArrayBuffer => {
+     if (!items || items.length === 0) {
+       // Return empty XLSX file
+       return new ArrayBuffer(0)
+     }
+     
+     const headers = Object.keys(items[0]).filter(key => key !== 'id' && key !== 'properties')
+     
+     // Create workbook structure
+     const workbook = {
+       SheetNames: ['Segment Data'],
+       Sheets: {
+         'Segment Data': {
+           '!ref': `A1:${String.fromCharCode(65 + headers.length - 1)}${items.length + 1}`,
+           // Headers
+           ...headers.reduce((acc, header, index) => {
+             acc[`${String.fromCharCode(65 + index)}1`] = { v: header.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), t: 's' }
+             return acc
+           }, {}),
+           // Data rows
+           ...items.reduce((acc, item, rowIndex) => {
+             headers.forEach((header, colIndex) => {
+               const cellAddress = `${String.fromCharCode(65 + colIndex)}${rowIndex + 2}`
+               const value = item[header]
+               if (value !== null && value !== undefined) {
+                 acc[cellAddress] = { v: value, t: typeof value === 'number' ? 'n' : 's' }
+               } else {
+                 acc[cellAddress] = { v: '', t: 's' }
+               }
+             })
+             return acc
+           }, {})
+         }
+       }
+     }
+     
+     // For now, we'll create a CSV that Excel can properly open
+     // This prevents corruption while maintaining Excel compatibility
+     const csvContent = convertToCSV(items)
+     const encoder = new TextEncoder()
+     return encoder.encode(csvContent).buffer
+   }
+
+   // Helper function to convert data to HTML
+   const convertToHTML = (items: any[]): string => {
+     if (!items || items.length === 0) return "<html><body><p>No data available</p></body></html>"
+     
+     const headers = Object.keys(items[0]).filter(key => key !== 'id' && key !== 'properties')
+     
+     let html = `
+       <html>
+         <head>
+           <title>Segment Preview Data</title>
+           <style>
+             body { font-family: Arial, sans-serif; margin: 20px; }
+             table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+             th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+             th { background-color: #f2f2f2; font-weight: bold; }
+             tr:nth-child(even) { background-color: #f9f9f9; }
+             h1 { color: #333; }
+           </style>
+         </head>
+         <body>
+           <h1>Segment Preview Data</h1>
+           <table>
+             <thead>
+               <tr>
+                 ${headers.map(header => `<th>${header.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</th>`).join('')}
+               </tr>
+             </thead>
+             <tbody>
+     `
+     
+     items.forEach(item => {
+       html += '<tr>'
+       headers.forEach(header => {
+         const value = item[header] || 'N/A'
+         html += `<td>${value}</td>`
+       })
+       html += '</tr>'
+     })
+     
+     html += `
+             </tbody>
+           </table>
+         </body>
+       </html>
+     `
+     
+     return html
+   }
+
+    const handleSave = async () => {
+    try {
+      const definition = buildDefinition()
+      
+      if (mode === "edit" && segmentId) {
+        // Update existing segment
+        await updateSegment(segmentId, {
+          name: segmentName,
+          description: "",
+          definition
+        })
+        toast({ title: "Segment Updated Successfully", description: `${segmentName} has been updated.` })
+      } else {
+        // Create new segment
+        await createSegment({
+          name: segmentName,
+          description: "",
+          status: "DRAFT",
+          is_active: 1,
+          definition,
+        })
+        toast({ title: "Segment Created Successfully", description: `${segmentName} has been saved.` })
+      }
+      
+      onOpenChange(false)
+      setSegmentName("")
+      setFilters([])
+      setPreviewItems([])
+      setPreviewCount(0)
+      
+      // Call refresh callback to update the segments list
+      if (onSegmentSaved) {
+        onSegmentSaved()
+      }
+    } catch (err) {
+      toast({ title: mode === "edit" ? "Update failed" : "Create failed", description: err instanceof Error ? err.message : String(err) })
     }
   }
 
@@ -306,7 +688,7 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create Segment</DialogTitle>
+          <DialogTitle>{mode === "edit" ? "Edit Segment" : "Create Segment"}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-6">
@@ -429,20 +811,119 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
                                       </Select>
                                     )
                                   }
-                                  return (
-                                    <Input
-                                      placeholder={p.operator === "in" ? "Comma-separated" : "Enter value"}
-                                      value={p.value}
-                                      onChange={(e) => {
-                                        const val = e.target.value
-                                        setFilters(filters.map(f => f.id === filter.id ? {
-                                          ...f,
-                                          props: (f.props ?? []).map(x => x.id === p.id ? { ...x, value: val } : x)
-                                        } : f))
-                                      }}
-                                      className="w-40"
-                                    />
-                                  )
+                                  // Enhanced input handling for different field types
+                                  return (() => {
+                                    const inputType = getEventFieldInputType(p.field, p.fieldType)
+                                    
+                                    // Date picker for date fields
+                                    if (inputType === 'date') {
+                                      return (
+                                        <Popover>
+                                          <PopoverTrigger asChild>
+                                            <Button
+                                              variant="outline"
+                                              className="w-40 justify-start text-left font-normal"
+                                            >
+                                              <CalendarIcon className="mr-2 h-4 w-4" />
+                                              {p.value ? format(new Date(p.value), "PPP") : "Pick a date"}
+                                            </Button>
+                                          </PopoverTrigger>
+                                          <PopoverContent className="w-auto p-0">
+                                            <Calendar
+                                              mode="single"
+                                              selected={p.value ? new Date(p.value) : undefined}
+                                              onSelect={(date) => {
+                                                if (date) {
+                                                  const formattedDate = format(date, "yyyy-MM-dd")
+                                                  setFilters(filters.map(f => f.id === filter.id ? {
+                                                    ...f,
+                                                    props: (f.props ?? []).map(x => x.id === p.id ? { ...x, value: formattedDate } : x)
+                                                  } : f))
+                                                }
+                                              }}
+                                              initialFocus
+                                            />
+                                          </PopoverContent>
+                                        </Popover>
+                                      )
+                                    }
+                                    
+                                    // Time picker for time fields
+                                    if (inputType === 'time') {
+                                      return (
+                                        <Input
+                                          type="time"
+                                          value={p.value || ""}
+                                          onChange={(e) => {
+                                            const val = e.target.value
+                                            setFilters(filters.map(f => f.id === filter.id ? {
+                                              ...f,
+                                              props: (f.props ?? []).map(x => x.id === p.id ? { ...x, value: val } : x)
+                                            } : f))
+                                          }}
+                                          className="w-40"
+                                        />
+                                      )
+                                    }
+                                    
+                                    // Number input for number fields
+                                    if (inputType === 'number') {
+                                      return (
+                                        <Input
+                                          type="number"
+                                          placeholder="Enter number"
+                                          value={p.value}
+                                          onChange={(e) => {
+                                            const val = e.target.value
+                                            setFilters(filters.map(f => f.id === filter.id ? {
+                                              ...f,
+                                              props: (f.props ?? []).map(x => x.id === p.id ? { ...x, value: val } : x)
+                                            } : f))
+                                          }}
+                                          className="w-40"
+                                        />
+                                      )
+                                    }
+                                    
+                                    // Boolean select for bool fields
+                                    if (inputType === 'boolean') {
+                                      return (
+                                        <Select
+                                          value={p.value}
+                                          onValueChange={(value) => {
+                                            setFilters(filters.map(f => f.id === filter.id ? {
+                                              ...f,
+                                              props: (f.props ?? []).map(x => x.id === p.id ? { ...x, value } : x)
+                                            } : f))
+                                          }}
+                                        >
+                                          <SelectTrigger className="w-40">
+                                            <SelectValue placeholder="Select value" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="true">True</SelectItem>
+                                            <SelectItem value="false">False</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      )
+                                    }
+                                    
+                                    // Default input for other types
+                                    return (
+                                      <Input
+                                        placeholder={p.operator === "in" ? "Comma-separated" : "Enter value"}
+                                        value={p.value}
+                                        onChange={(e) => {
+                                          const val = e.target.value
+                                          setFilters(filters.map(f => f.id === filter.id ? {
+                                            ...f,
+                                            props: (f.props ?? []).map(x => x.id === p.id ? { ...x, value: val } : x)
+                                          } : f))
+                                        }}
+                                        className="w-40"
+                                      />
+                                    )
+                                  })()
                                 })()
                               )}
                               <Button
@@ -688,43 +1169,52 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
             )}
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                Live Preview
-                <Badge variant="outline">
-                  {previewLoading ? "Loading…" : `${previewItems.length} users`}
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>User ID</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Event Time</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {previewItems.map((item, idx) => (
-                    <TableRow key={idx}>
-                      <TableCell>{item.user_id}</TableCell>
-                      <TableCell>{item.name}</TableCell>
-                      <TableCell>{item.email}</TableCell>
-                      <TableCell>{item.event_time ? new Date(item.event_time).toLocaleString() : ""}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              <div className="mt-4 flex gap-2">
-                <Button variant="outline" onClick={handlePreview} disabled={previewLoading || !hasAnyDefinition()}>
-                  Preview
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                     <Card>
+             <CardHeader>
+               <CardTitle className="flex items-center justify-between">
+                 Live Preview
+                 <Badge variant="outline">
+                   {previewLoading ? "Loading…" : `${previewCount} users`}
+                 </Badge>
+               </CardTitle>
+             </CardHeader>
+             <CardContent>
+               <div className="text-center py-8">
+                 <p className="text-2xl font-bold text-primary">{previewCount}</p>
+                 <p className="text-muted-foreground">Total users matching criteria</p>
+               </div>
+                               <div className="mt-4 flex gap-2 justify-center items-center">
+                                     <Button variant="outline" onClick={handlePreview} disabled={previewLoading || !hasAnyDefinition()}>
+                     Preview
+                   </Button>
+                  
+                  <div className="flex items-center gap-2">
+                                         <Select value={downloadFormat} onValueChange={setDownloadFormat}>
+                       <SelectTrigger className="w-32">
+                         <SelectValue />
+                       </SelectTrigger>
+                       <SelectContent>
+                         <SelectItem value="csv">CSV</SelectItem>
+                         <SelectItem value="json">JSON</SelectItem>
+                         <SelectItem value="txt">Text</SelectItem>
+                         <SelectItem value="xlsx">Excel</SelectItem>
+                         <SelectItem value="html">HTML</SelectItem>
+                         <SelectItem value="pdf">PDF</SelectItem>
+                         <SelectItem value="docx">Word</SelectItem>
+                       </SelectContent>
+                     </Select>
+                    
+                    <Button 
+                      variant="outline" 
+                      onClick={handleDownload} 
+                      disabled={previewLoading || previewCount === 0 || !hasAnyDefinition()}
+                    >
+                      Download {downloadFormat.toUpperCase()}
+                    </Button>
+                  </div>
+                </div>
+             </CardContent>
+           </Card>
         </div>
 
         <div className="flex justify-end gap-4 mt-6">
@@ -732,7 +1222,7 @@ export function CreateSegmentModal({ open, onOpenChange }: CreateSegmentModalPro
             Cancel
           </Button>
           <Button onClick={handleSave} disabled={!segmentName.trim() || !hasAnyDefinition()}>
-            Save Segment
+            {mode === "edit" ? "Update Segment" : "Save Segment"}
           </Button>
         </div>
       </DialogContent>

@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { CreateSegmentModal } from "@/components/Modals/CreateSegmentModal"
+import { ExportSegmentModal } from "@/components/Modals/ExportSegmentModal"
 import { 
   Users, 
   Plus, 
@@ -12,7 +13,7 @@ import {
   Target
 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
-import { fetchSegments, type SegmentItem, type SegmentsPayload } from "@/lib/api"
+import { fetchSegments, fetchSegmentById, type SegmentItem, type SegmentsPayload, type SegmentDefinition } from "@/lib/api"
 
 // Server-driven segments will populate below
 
@@ -45,6 +46,15 @@ const segmentTemplates = [
 
 export default function Segments() {
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [editSegmentId, setEditSegmentId] = useState<string | null>(null)
+  const [editInitial, setEditInitial] = useState<{
+    name?: string
+    description?: string
+    definition?: SegmentDefinition
+  } | null>(null)
+  const [exportSegmentId, setExportSegmentId] = useState<string | null>(null)
+  const [exportSegmentName, setExportSegmentName] = useState<string>("")
+  const [exportSegmentFilters, setExportSegmentFilters] = useState<string>("")
   const [items, setItems] = useState<SegmentItem[]>([])
   const [page, setPage] = useState<number>(1)
   const [limit] = useState<number>(10)
@@ -79,6 +89,51 @@ export default function Segments() {
 
   const canPrev = useMemo(() => page > 1, [page])
   const canNext = useMemo(() => page < totalPages, [page, totalPages])
+
+  const handleEditSegment = async (segmentId: string) => {
+    try {
+      console.log("Fetching segment details for ID:", segmentId)
+      const res = await fetchSegmentById(segmentId)
+      const segment = res.data
+      console.log("Segment data received:", segment)
+      
+      setEditInitial({
+        name: segment.name,
+        description: segment.description,
+        definition: segment.definition
+      })
+      setEditSegmentId(segmentId)
+      console.log("Edit modal opened for segment:", segment.name)
+    } catch (error) {
+      console.error("Failed to fetch segment details:", error)
+    }
+  }
+
+  const refreshSegments = () => {
+    // Reset to first page and refetch segments
+    setPage(1)
+    setLoading(true)
+    setError(null)
+    fetchSegments({ page: 1, limit })
+      .then((res) => {
+        const payload: SegmentsPayload = res.data
+        setItems(payload.items || [])
+        setTotalPages(payload.totalPages || 1)
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : "Failed to load segments")
+        setItems([])
+      })
+      .finally(() => {
+        setLoading(false)
+      })
+  }
+
+  const handleExportSegment = (segmentId: string, segmentName: string, segmentFilters: string) => {
+    setExportSegmentId(segmentId)
+    setExportSegmentName(segmentName)
+    setExportSegmentFilters(segmentFilters)
+  }
   
   return (
     <div className="space-y-6">
@@ -157,8 +212,8 @@ export default function Segments() {
             <div className="text-sm text-muted-foreground py-4">No segments found.</div>
           ) : (
             <div className="space-y-4">
-              {items.map((segment) => (
-                <Card key={segment.id} className="hover-lift cursor-pointer">
+                             {items.map((segment) => (
+                 <Card key={segment.reference_id || segment.referenceId || segment.id} className="hover-lift cursor-pointer">
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
@@ -172,17 +227,28 @@ export default function Segments() {
                           ) : null}
                         </div>
                         <p className="text-muted-foreground mb-4">{segment.description || ""}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Ref: {segment.referenceId} • {segment.updatedAt ? new Date(segment.updatedAt).toLocaleString() : ""}
-                        </p>
+                                                 <p className="text-xs text-muted-foreground">
+                           Ref: {segment.reference_id || segment.referenceId || 'N/A'} • {(segment.updated_at || segment.updatedAt) ? new Date(segment.updated_at || segment.updatedAt || 0).toLocaleString() : ""}
+                         </p>
                       </div>
                       <div className="flex gap-2">
-                        <Button variant="outline" size="sm">
-                          Edit
-                        </Button>
-                        <Button variant="outline" size="sm">
-                          Export
-                        </Button>
+                                                                          <Button 
+                           variant="outline" 
+                           size="sm"
+                           onClick={() => {
+                             console.log("Edit button clicked for segment:", segment)
+                             handleEditSegment(segment.reference_id || segment.referenceId || '')
+                           }}
+                         >
+                           Edit
+                         </Button>
+                         <Button 
+                           variant="outline" 
+                           size="sm"
+                           onClick={() => handleExportSegment(segment.reference_id || segment.referenceId || '', segment.name, segment.filters || '{}')}
+                         >
+                           Export
+                         </Button>
                       </div>
                     </div>
                   </CardContent>
@@ -212,7 +278,38 @@ export default function Segments() {
         </CardContent>
       </Card>
 
-      <CreateSegmentModal open={showCreateModal} onOpenChange={setShowCreateModal} />
-    </div>
-  )
-}
+      <CreateSegmentModal open={showCreateModal} onOpenChange={setShowCreateModal} onSegmentSaved={refreshSegments} />
+             {editSegmentId && editInitial && (
+         <CreateSegmentModal
+           open={!!editSegmentId}
+           onOpenChange={(open) => {
+             if (!open) {
+               setEditSegmentId(null)
+               setEditInitial(null)
+             }
+           }}
+           mode="edit"
+           segmentId={editSegmentId}
+           initial={editInitial}
+           onSegmentSaved={refreshSegments}
+         />
+       )}
+       
+               {exportSegmentId && (
+          <ExportSegmentModal
+            open={!!exportSegmentId}
+            onOpenChange={(open) => {
+              if (!open) {
+                setExportSegmentId(null)
+                setExportSegmentName("")
+                setExportSegmentFilters("")
+              }
+            }}
+            segmentReferenceId={exportSegmentId}
+            segmentName={exportSegmentName}
+            segmentFilters={exportSegmentFilters}
+          />
+        )}
+     </div>
+   )
+ }

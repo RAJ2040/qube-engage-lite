@@ -47,9 +47,14 @@ const weekDays = [
   { value: "sunday", label: "Sunday" }
 ]
 
-const timeSlots = Array.from({ length: 24 }, (_, i) => {
-  const hour = i.toString().padStart(2, '0')
-  return { value: `${hour}:00`, label: `${hour}:00` }
+// Generate time slots for every 15 minutes (more granular than hourly)
+const timeSlots = Array.from({ length: 96 }, (_, i) => {
+  const totalMinutes = i * 15
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  const hourStr = hours.toString().padStart(2, '0')
+  const minuteStr = minutes.toString().padStart(2, '0')
+  return { value: `${hourStr}:${minuteStr}`, label: `${hourStr}:${minuteStr}` }
 })
 
 // Dynamic search replaces static segments
@@ -66,6 +71,16 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
     templateName?: string; 
     templateId?: string | null; 
     templateBody?: string;
+    // Scheduling fields
+    scheduleDate?: string | Date;
+    startTime?: string;
+    endTime?: string;
+    recurrence?: string;
+    selectedWeekDays?: string[];
+    customInterval?: number;
+    customUnit?: string;
+    timezone?: string;
+    // Throttling and retry policy
     throttling?: {
       max_messages_per_minute: number;
       max_messages_per_hour: number;
@@ -182,8 +197,8 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
   const { toast } = useToast()
 
   const nextStep = async () => {
-    // Save current step data before moving to next step
-    if (isStepValid()) {
+    // Only save data in create mode, not in edit mode
+    if (restProps.mode !== "edit" && isStepValid()) {
       await savePartialCampaign(step)
     }
     setStep(step + 1)
@@ -207,6 +222,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
         const payload: any = {
           name: campaignData.name,
           description: campaignData.description,
+          status: "ACTIVE"
         }
         
         // Add data based on current step
@@ -218,11 +234,11 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
         }
         if (stepNumber >= 4 && campaignData.scheduleDate && campaignData.startTime) {
           const scheduleData = {
-            start_date: format(campaignData.scheduleDate, "yyyy-MM-dd"),
+            start_at: campaignData.scheduleDate ? format(campaignData.scheduleDate, "yyyy-MM-dd") + " " + campaignData.startTime + ":00" : undefined,
             start_time: campaignData.startTime,
             end_time: campaignData.endTime || undefined,
             recurrence: campaignData.recurrence,
-            selected_week_days: campaignData.selectedWeekDays.length > 0 ? campaignData.selectedWeekDays : undefined,
+            weekly_days: campaignData.selectedWeekDays.length > 0 ? campaignData.selectedWeekDays.map(day => day.toUpperCase()) : undefined,
             custom_interval: campaignData.recurrence === "RECURRING" ? campaignData.customInterval : undefined,
             custom_unit: campaignData.recurrence === "RECURRING" ? campaignData.customUnit : undefined,
             timezone: campaignData.timezone
@@ -231,8 +247,18 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
           payload.schedule_json = JSON.stringify(scheduleData)
         }
         if (stepNumber >= 5) {
-          payload.throttling = campaignData.throttling
-          payload.retry_policy = campaignData.retry_policy
+          // Create policy_json with audience_policy, throttling and retry policy nested inside
+          payload.policy_json = JSON.stringify({
+            audience_policy: {
+              max_audience_size: 5000,
+              batch_size: 100,
+              batch_delay_seconds: 120,
+              exclude_inactive_users: true,
+              audience_refresh_frequency: "DAILY"
+            },
+            throttling: campaignData.throttling,
+            retry_policy: campaignData.retry_policy
+          })
         }
         if (stepNumber >= 6 && campaignData.templateId) {
           payload.message_template_id = campaignData.templateId
@@ -263,6 +289,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
         const payload: any = {
           name: campaignData.name,
           description: campaignData.description,
+          status: "ACTIVE"
         }
         
         // Add data based on current step
@@ -274,11 +301,11 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
         }
         if (stepNumber >= 4 && campaignData.scheduleDate && campaignData.startTime) {
           const scheduleData = {
-            start_date: format(campaignData.scheduleDate, "yyyy-MM-dd"),
+            start_at: campaignData.scheduleDate ? format(campaignData.scheduleDate, "yyyy-MM-dd") + " " + campaignData.startTime + ":00" : undefined,
             start_time: campaignData.startTime,
             end_time: campaignData.endTime || undefined,
             recurrence: campaignData.recurrence,
-            selected_week_days: campaignData.selectedWeekDays.length > 0 ? campaignData.selectedWeekDays : undefined,
+            weekly_days: campaignData.selectedWeekDays.length > 0 ? campaignData.selectedWeekDays.map(day => day.toUpperCase()) : undefined,
             custom_interval: campaignData.recurrence === "RECURRING" ? campaignData.customInterval : undefined,
             custom_unit: campaignData.recurrence === "RECURRING" ? campaignData.customUnit : undefined,
             timezone: campaignData.timezone
@@ -287,8 +314,18 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
           payload.schedule_json = JSON.stringify(scheduleData)
         }
         if (stepNumber >= 5) {
-          payload.throttling = campaignData.throttling
-          payload.retry_policy = campaignData.retry_policy
+          // Create policy_json with audience_policy, throttling and retry policy nested inside
+          payload.policy_json = JSON.stringify({
+            audience_policy: {
+              max_audience_size: 5000,
+              batch_size: 100,
+              batch_delay_seconds: 120,
+              exclude_inactive_users: true,
+              audience_refresh_frequency: "DAILY"
+            },
+            throttling: campaignData.throttling,
+            retry_policy: campaignData.retry_policy
+          })
         }
         if (stepNumber >= 6 && campaignData.templateId) {
           payload.message_template_id = campaignData.templateId
@@ -322,6 +359,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
       const payload: any = {
         name: campaignData.name,
         description: campaignData.description,
+        status: "ACTIVE"
       }
       if (campaignData.channel) payload.channel_name = campaignData.channel
       // Require a referenceId for segment
@@ -333,11 +371,11 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
       // Add scheduling data
       if (campaignData.scheduleDate && campaignData.startTime) {
         const scheduleData = {
-          start_date: format(campaignData.scheduleDate, "yyyy-MM-dd"),
+          start_at: campaignData.scheduleDate ? format(campaignData.scheduleDate, "yyyy-MM-dd") + " " + campaignData.startTime + ":00" : undefined,
           start_time: campaignData.startTime,
           end_time: campaignData.endTime || undefined,
           recurrence: campaignData.recurrence,
-          selected_week_days: campaignData.selectedWeekDays.length > 0 ? campaignData.selectedWeekDays : undefined,
+          weekly_days: campaignData.selectedWeekDays.length > 0 ? campaignData.selectedWeekDays.map(day => day.toUpperCase()) : undefined,
           custom_interval: campaignData.recurrence === "RECURRING" ? campaignData.customInterval : undefined,
           custom_unit: campaignData.recurrence === "RECURRING" ? campaignData.customUnit : undefined,
           timezone: campaignData.timezone
@@ -348,8 +386,17 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
       }
 
       // Add throttling and retry policy
-      payload.throttling = campaignData.throttling
-      payload.retry_policy = campaignData.retry_policy
+      payload.policy_json = JSON.stringify({
+        audience_policy: {
+          max_audience_size: 5000,
+          batch_size: 100,
+          batch_delay_seconds: 120,
+          exclude_inactive_users: true,
+          audience_refresh_frequency: "DAILY"
+        },
+        throttling: campaignData.throttling,
+        retry_policy: campaignData.retry_policy
+      })
 
       if (restProps.mode === "edit" && restProps.referenceId) {
         const res = await updateCampaign(restProps.referenceId, payload)
@@ -405,6 +452,15 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
         template: restProps.initial?.templateBody ?? prev.template,
         throttling: restProps.initial?.throttling ?? prev.throttling,
         retry_policy: restProps.initial?.retry_policy ?? prev.retry_policy,
+        // Parse schedule data if available
+        scheduleDate: restProps.initial?.scheduleDate ? new Date(restProps.initial.scheduleDate) : prev.scheduleDate,
+        startTime: restProps.initial?.startTime ?? prev.startTime,
+        endTime: restProps.initial?.endTime ?? prev.endTime,
+        recurrence: restProps.initial?.recurrence ?? prev.recurrence,
+        selectedWeekDays: restProps.initial?.selectedWeekDays ?? prev.selectedWeekDays,
+        customInterval: restProps.initial?.customInterval ?? prev.customInterval,
+        customUnit: restProps.initial?.customUnit ?? prev.customUnit,
+        timezone: restProps.initial?.timezone ?? prev.timezone,
       }))
       setCreatedRefId(restProps.referenceId ?? null)
     }
@@ -577,45 +633,72 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
                       selected={campaignData.scheduleDate}
                       onSelect={(date) => setCampaignData({ ...campaignData, scheduleDate: date })}
                       initialFocus
-                      disabled={(date) => date < new Date()}
+                      disabled={(date) => {
+                        // Allow today's date, only disable past dates
+                        const today = new Date()
+                        today.setHours(0, 0, 0, 0)
+                        const selectedDate = new Date(date)
+                        selectedDate.setHours(0, 0, 0, 0)
+                        return selectedDate < today
+                      }}
                     />
                   </PopoverContent>
                 </Popover>
               </div>
 
-              {/* Time Selection */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Start Time</Label>
-                  <Select value={campaignData.startTime} onValueChange={(value) => setCampaignData({ ...campaignData, startTime: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select start time" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {timeSlots.map((slot) => (
-                        <SelectItem key={slot.value} value={slot.value}>
-                          {slot.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>End Time (Optional)</Label>
-                  <Select value={campaignData.endTime} onValueChange={(value) => setCampaignData({ ...campaignData, endTime: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select end time" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {timeSlots.map((slot) => (
-                        <SelectItem key={slot.value} value={slot.value}>
-                          {slot.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+                             {/* Time Selection */}
+               <div className="grid grid-cols-2 gap-4">
+                 <div className="space-y-2">
+                   <Label>Start Time</Label>
+                   <div className="flex gap-2">
+                     <Select value={campaignData.startTime} onValueChange={(value) => setCampaignData({ ...campaignData, startTime: value })}>
+                       <SelectTrigger className="flex-1">
+                         <SelectValue placeholder="Select start time" />
+                       </SelectTrigger>
+                       <SelectContent>
+                         {timeSlots.map((slot) => (
+                           <SelectItem key={slot.value} value={slot.value}>
+                             {slot.label}
+                           </SelectItem>
+                         ))}
+                       </SelectContent>
+                     </Select>
+                     <Input
+                       type="time"
+                       value={campaignData.startTime}
+                       onChange={(e) => setCampaignData({ ...campaignData, startTime: e.target.value })}
+                       className="w-32"
+                       placeholder="HH:MM"
+                     />
+                   </div>
+                   <p className="text-xs text-muted-foreground">Use dropdown for quick selection or type custom time</p>
+                 </div>
+                 <div className="space-y-2">
+                   <Label>End Time (Optional)</Label>
+                   <div className="flex gap-2">
+                     <Select value={campaignData.endTime} onValueChange={(value) => setCampaignData({ ...campaignData, endTime: value })}>
+                       <SelectTrigger className="flex-1">
+                         <SelectValue placeholder="Select end time" />
+                       </SelectTrigger>
+                       <SelectContent>
+                         {timeSlots.map((slot) => (
+                           <SelectItem key={slot.value} value={slot.value}>
+                             {slot.label}
+                           </SelectItem>
+                         ))}
+                       </SelectContent>
+                     </Select>
+                     <Input
+                       type="time"
+                       value={campaignData.endTime}
+                       onChange={(e) => setCampaignData({ ...campaignData, endTime: e.target.value })}
+                       className="w-32"
+                       placeholder="HH:MM"
+                     />
+                   </div>
+                   <p className="text-xs text-muted-foreground">Use dropdown for quick selection or type custom time</p>
+                 </div>
+               </div>
 
               {/* Recurrence Options */}
               <div className="space-y-4">
@@ -946,8 +1029,8 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
           )}
         </div>
 
-        {/* Save Progress Button */}
-        {step < 7 && (
+        {/* Save Progress Button - Only show in edit mode */}
+        {step < 7 && restProps.mode === "edit" && (
           <div className="flex flex-col items-center gap-2 mt-6">
             <Button 
               variant="outline" 
