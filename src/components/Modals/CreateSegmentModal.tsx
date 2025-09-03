@@ -13,12 +13,18 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command"
 import { Calendar } from "@/components/ui/calendar"
 import { format } from "date-fns"
+// For proper Excel file generation
+import * as XLSX from 'xlsx'
+// For proper PDF generation
+import jsPDF from 'jspdf'
+import 'jspdf-autotable'
 import {
   fetchUserPropsCatalog,
   fetchEventsCatalog,
   fetchEventCatalogDetails,
   fetchOperatorsCatalog,
   fetchFieldCatalog,
+  fetchSegmentById,
   type EventsCatalogItem,
   type OperatorsCatalogPayload,
   type UserPropsCatalogPayload,
@@ -97,67 +103,90 @@ export function CreateSegmentModal({ open, onOpenChange, mode = "create", segmen
 
   // Load segment data when in edit mode
   useEffect(() => {
-    if (!open || mode !== "edit" || !segmentId || !initial) return
+    if (!open || mode !== "edit" || !segmentId) return
     
-    setSegmentName(initial.name || "")
-    if (initial.definition) {
-      // Convert definition back to filters
-      const newFilters: FilterRow[] = []
-      
-      // Handle user criteria
-      if (initial.definition.criteria) {
-        Object.entries(initial.definition.criteria).forEach(([field, config]) => {
-          if (typeof config === 'object' && config.operator && config.value !== undefined) {
-            newFilters.push({
-              id: Date.now().toString() + Math.random(),
-              entity: "Users",
-              field,
-              fieldType: typeof config.value === 'number' ? 'number' : 
-                         typeof config.value === 'boolean' ? 'bool' : 'string',
-              operator: config.operator,
-              value: String(config.value)
-            })
-          }
-        })
-      }
-      
-      // Handle event criteria
-      if (initial.definition.anyOfEvents) {
-        initial.definition.anyOfEvents.forEach((eventObj: any) => {
-          if (eventObj.name && eventObj.name.operator === 'eq') {
-            const eventFilter: FilterRow = {
-              id: Date.now().toString() + Math.random(),
-              entity: "Events",
-              eventName: eventObj.name.value,
-              field: "",
-              fieldType: undefined,
-              operator: "eq",
-              value: "",
-              props: []
-            }
-            
-            // Add event properties
-            Object.entries(eventObj).forEach(([key, config]) => {
-              if (key !== 'name' && typeof config === 'object' && config.operator && config.value !== undefined) {
-                eventFilter.props!.push({
-                  id: Date.now().toString() + Math.random(),
-                  field: key,
-                  fieldType: typeof config.value === 'number' ? 'number' : 
-                             typeof config.value === 'boolean' ? 'bool' : 'string',
-                  operator: config.operator,
-                  value: String(config.value)
+    const loadSegmentData = async () => {
+      try {
+        setLoading(true)
+        const response = await fetchSegmentById(segmentId)
+        
+        if (response.data && response.data.items && response.data.items.length > 0) {
+          const segment = response.data.items[0] // Get the first (and should be only) item
+          setSegmentName(segment.name || "")
+          
+          // Parse the filters JSON string
+          if (segment.filters) {
+            try {
+              const filtersData = JSON.parse(segment.filters)
+              const newFilters: FilterRow[] = []
+              
+              // Handle user criteria
+              if (filtersData.criteria) {
+                Object.entries(filtersData.criteria).forEach(([field, config]: [string, any]) => {
+                  if (typeof config === 'object' && config.operator && config.value !== undefined) {
+                    newFilters.push({
+                      id: Date.now().toString() + Math.random(),
+                      entity: "Users",
+                      field,
+                      fieldType: typeof config.value === 'number' ? 'number' : 
+                                 typeof config.value === 'boolean' ? 'bool' : 'string',
+                      operator: config.operator,
+                      value: String(config.value)
+                    })
+                  }
                 })
               }
-            })
-            
-            newFilters.push(eventFilter)
+              
+              // Handle event criteria (if any)
+              if (filtersData.anyOfEvents) {
+                filtersData.anyOfEvents.forEach((eventObj: any) => {
+                  if (eventObj.name && eventObj.name.operator === 'eq') {
+                    const eventFilter: FilterRow = {
+                      id: Date.now().toString() + Math.random(),
+                      entity: "Events",
+                      eventName: eventObj.name.value,
+                      field: "",
+                      fieldType: undefined,
+                      operator: "eq",
+                      value: "",
+                      props: []
+                    }
+                    
+                    // Add event properties
+                    Object.entries(eventObj).forEach(([key, config]: [string, any]) => {
+                      if (key !== 'name' && typeof config === 'object' && config.operator && config.value !== undefined) {
+                        eventFilter.props!.push({
+                          id: Date.now().toString() + Math.random(),
+                          field: key,
+                          fieldType: typeof config.value === 'number' ? 'number' : 
+                                     typeof config.value === 'boolean' ? 'bool' : 'string',
+                          operator: config.operator,
+                          value: String(config.value)
+                        })
+                      }
+                    })
+                    
+                    newFilters.push(eventFilter)
+                  }
+                })
+              }
+              
+              setFilters(newFilters)
+            } catch (parseError) {
+              console.error('Failed to parse filters JSON:', parseError)
+              toast({ title: "Warning", description: "Failed to parse segment filters. Starting with empty filters." })
+            }
           }
-        })
+        }
+      } catch (err) {
+        toast({ title: "Failed to load segment", description: err instanceof Error ? err.message : String(err) })
+      } finally {
+        setLoading(false)
       }
-      
-      setFilters(newFilters)
     }
-  }, [open, mode, segmentId, initial])
+    
+    loadSegmentData()
+  }, [open, mode, segmentId])
 
   const addFilter = () => {
     const newFilter = {
@@ -458,17 +487,12 @@ export function CreateSegmentModal({ open, onOpenChange, mode = "create", segmen
            mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
            break
          case "pdf":
-           // For PDF, we'll create HTML that can be converted to PDF
-           fileContent = convertToHTML(jsonData.items || [])
+           // For PDF, use improved PDF generation via Excel conversion
+           fileContent = convertToPDF(jsonData.items || [])
            fileName = `segment_preview_${Date.now()}.pdf`
            mimeType = 'application/pdf'
            break
-         case "docx":
-           // For Word, we'll create HTML that can be converted to DOCX
-           fileContent = convertToHTML(jsonData.items || [])
-           fileName = `segment_preview_${Date.now()}.docx`
-           mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-           break
+
          case "html":
            // Separate HTML option
            fileContent = convertToHTML(jsonData.items || [])
@@ -546,46 +570,112 @@ export function CreateSegmentModal({ open, onOpenChange, mode = "create", segmen
 
      // Helper function to convert data to XLSX (proper Excel format)
    const convertToXLSX = (items: any[]): ArrayBuffer => {
-     if (!items || items.length === 0) {
-       // Return empty XLSX file
+     if (!items || !Array.isArray(items) || items.length === 0) {
+       return new ArrayBuffer(0)
+     }
+     
+     // Ensure items[0] exists and has properties
+     if (!items[0] || typeof items[0] !== 'object') {
        return new ArrayBuffer(0)
      }
      
      const headers = Object.keys(items[0]).filter(key => key !== 'id' && key !== 'properties')
-     
-     // Create workbook structure
-     const workbook = {
-       SheetNames: ['Segment Data'],
-       Sheets: {
-         'Segment Data': {
-           '!ref': `A1:${String.fromCharCode(65 + headers.length - 1)}${items.length + 1}`,
-           // Headers
-           ...headers.reduce((acc, header, index) => {
-             acc[`${String.fromCharCode(65 + index)}1`] = { v: header.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), t: 's' }
-             return acc
-           }, {}),
-           // Data rows
-           ...items.reduce((acc, item, rowIndex) => {
-             headers.forEach((header, colIndex) => {
-               const cellAddress = `${String.fromCharCode(65 + colIndex)}${rowIndex + 2}`
-               const value = item[header]
-               if (value !== null && value !== undefined) {
-                 acc[cellAddress] = { v: value, t: typeof value === 'number' ? 'n' : 's' }
-               } else {
-                 acc[cellAddress] = { v: '', t: 's' }
-               }
-             })
-             return acc
-           }, {})
-         }
-       }
+     if (headers.length === 0) {
+       return new ArrayBuffer(0)
      }
      
-     // For now, we'll create a CSV that Excel can properly open
-     // This prevents corruption while maintaining Excel compatibility
-     const csvContent = convertToCSV(items)
-     const encoder = new TextEncoder()
-     return encoder.encode(csvContent).buffer
+     // Create worksheet data
+     const wsData = [
+       headers.map(header => header.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())),
+       ...items.map(item => 
+         item && typeof item === 'object' ? 
+         headers.map(header => {
+           const value = item[header]
+           if (value === null || value === undefined) return ''
+           return String(value)
+         }) : 
+         headers.map(() => '')
+       )
+     ]
+     
+     // Create workbook and worksheet
+     const wb = XLSX.utils.book_new()
+     const ws = XLSX.utils.aoa_to_sheet(wsData)
+     
+     // Add worksheet to workbook
+     XLSX.utils.book_append_sheet(wb, ws, 'Segment Data')
+     
+     // Generate Excel file as ArrayBuffer
+     const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+     return excelBuffer
+   }
+
+   // Helper function to convert data to PDF via Excel
+   const convertToPDF = (items: any[]): ArrayBuffer => {
+     try {
+       // Validate items array
+       if (!items || !Array.isArray(items) || items.length === 0) {
+         return new ArrayBuffer(0)
+       }
+       
+       // Ensure items[0] exists and has properties
+       if (!items[0] || typeof items[0] !== 'object') {
+         return new ArrayBuffer(0)
+       }
+       
+       // Get headers from first item
+       const headers = Object.keys(items[0]).filter(key => key !== 'id' && key !== 'properties')
+       
+       if (headers.length === 0) {
+         return new ArrayBuffer(0)
+       }
+       
+       // Create header row
+       const headerRow = headers.map(header => header.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))
+       
+       // Create data rows
+       const dataRows = items.map(item => 
+         item && typeof item === 'object' ? 
+         headers.map(header => {
+           const value = item[header]
+           if (value === null || value === undefined) return ''
+           return String(value)
+         }) : 
+         headers.map(() => '')
+       )
+       
+       // Now convert to PDF using jsPDF
+       const doc = new jsPDF()
+       
+       // Add title
+       doc.setFontSize(16)
+       doc.text(`Segment Preview: ${segmentName}`, 14, 22)
+       
+       // Add table using autoTable plugin
+       (doc as any).autoTable({
+         head: [headerRow],
+         body: dataRows,
+         startY: 30,
+         styles: {
+           fontSize: 10,
+           cellPadding: 3,
+         },
+         headStyles: {
+           fillColor: [66, 139, 202],
+           textColor: 255,
+           fontStyle: 'bold',
+         },
+         alternateRowStyles: {
+           fillColor: [245, 245, 245],
+         },
+       })
+       
+       // Convert PDF to ArrayBuffer
+       const pdfBytes = (doc as any).output('arraybuffer')
+       return pdfBytes
+     } catch (error) {
+       return new ArrayBuffer(0)
+     }
    }
 
    // Helper function to convert data to HTML
@@ -1200,7 +1290,7 @@ export function CreateSegmentModal({ open, onOpenChange, mode = "create", segmen
                          <SelectItem value="xlsx">Excel</SelectItem>
                          <SelectItem value="html">HTML</SelectItem>
                          <SelectItem value="pdf">PDF</SelectItem>
-                         <SelectItem value="docx">Word</SelectItem>
+        
                        </SelectContent>
                      </Select>
                     
