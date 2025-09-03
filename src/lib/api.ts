@@ -201,7 +201,7 @@ export function searchSegments(query: string, params?: { page?: number; limit?: 
 }
 
 export function fetchSegmentById(referenceId: string) {
-    return httpGet<ApiResponse<{ items: SegmentItem[] }>>(`/app/segments?reference_Id=${referenceId}`)
+    return httpGet<ApiResponse<{ items: SegmentItem[] }>>(`/app/segments?reference_id=${referenceId}`)
 }
 
 export function updateSegment(id: string, payload: { name: string; description: string; definition: SegmentDefinition }) {
