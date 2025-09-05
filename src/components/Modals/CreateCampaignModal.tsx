@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils"
 interface CreateCampaignModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onRefresh?: () => void
 }
 
 const channels = [
@@ -30,11 +31,22 @@ const channels = [
 ]
 
 const recurrenceOptions = [
-  { value: "IMMEDIATE", label: "Immediate" },
   { value: "ONE_TIME", label: "One Time" },
-  { value: "RECURRING", label: "Recurring" },
+  { value: "RECURRING", label: "Recurring" }
+]
+
+const oneTimeOptions = [
+  { value: "IMMEDIATE", label: "Immediate" },
+  { value: "SCHEDULED", label: "Scheduled" }
+]
+
+const recurringPatterns = [
+  { value: "MINUTE", label: "Minute" },
+  { value: "HOUR", label: "Hour" },
+  { value: "DAILY", label: "Daily" },
   { value: "WEEKLY", label: "Weekly" },
-  { value: "MONTHLY", label: "Monthly" }
+  { value: "MONTHLY", label: "Monthly" },
+  { value: "YEARLY", label: "Yearly" }
 ]
 
 const weekDays = [
@@ -47,15 +59,47 @@ const weekDays = [
   { value: "sunday", label: "Sunday" }
 ]
 
-// Generate time slots for every 15 minutes (more granular than hourly)
-const timeSlots = Array.from({ length: 96 }, (_, i) => {
-  const totalMinutes = i * 15
-  const hours = Math.floor(totalMinutes / 60)
-  const minutes = totalMinutes % 60
-  const hourStr = hours.toString().padStart(2, '0')
-  const minuteStr = minutes.toString().padStart(2, '0')
-  return { value: `${hourStr}:${minuteStr}`, label: `${hourStr}:${minuteStr}` }
-})
+const monthOptions = [
+  { value: "1", label: "1st" },
+  { value: "2", label: "2nd" },
+  { value: "3", label: "3rd" },
+  { value: "4", label: "4th" },
+  { value: "5", label: "5th" },
+  { value: "6", label: "6th" },
+  { value: "7", label: "7th" },
+  { value: "8", label: "8th" },
+  { value: "9", label: "9th" },
+  { value: "10", label: "10th" },
+  { value: "11", label: "11th" },
+  { value: "12", label: "12th" },
+  { value: "13", label: "13th" },
+  { value: "14", label: "14th" },
+  { value: "15", label: "15th" },
+  { value: "16", label: "16th" },
+  { value: "17", label: "17th" },
+  { value: "18", label: "18th" },
+  { value: "19", label: "19th" },
+  { value: "20", label: "20th" },
+  { value: "21", label: "21st" },
+  { value: "22", label: "22nd" },
+  { value: "23", label: "23rd" },
+  { value: "24", label: "24th" },
+  { value: "25", label: "25th" },
+  { value: "26", label: "26th" },
+  { value: "27", label: "27th" },
+  { value: "28", label: "28th" },
+  { value: "29", label: "29th" },
+  { value: "30", label: "30th" },
+  { value: "31", label: "31st" },
+  { value: "last", label: "Last" }
+]
+
+const monthNames = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+]
+
+
 
 // Dynamic search replaces static segments
 
@@ -75,11 +119,31 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
     scheduleDate?: string | Date;
     startTime?: string;
     endTime?: string;
-    recurrence?: string;
-    weekly_days?: string[];
-    custom_interval?: number;
-    custom_unit?: string;
-    timezone?: string;
+         recurrence?: string;
+     oneTimeOption?: string;
+     recurringPattern?: string;
+     weekly_days?: string[];
+     custom_interval?: number;
+     custom_unit?: string;
+     timezone?: string;
+    // Enhanced scheduling fields
+    isAllDay?: boolean;
+    location?: string;
+    scheduleDescription?: string;
+    endDate?: string | Date;
+    customRecurrence?: {
+      frequency: string;
+      interval: number;
+      endAfterOccurrences?: number;
+      endOnDate?: Date;
+      monthlyPattern?: "day" | "weekday";
+      monthlyWeek?: string;
+      monthlyDay?: string;
+      yearlyPattern?: "day" | "weekday";
+      yearlyMonth?: string;
+      yearlyWeek?: string;
+      yearlyDay?: string;
+    };
     // Throttling and retry policy
     throttling?: {
       max_messages_per_minute: number;
@@ -110,11 +174,29 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
     scheduleDate: null as Date | null,
     startTime: "",
     endTime: "",
-    recurrence: "IMMEDIATE",
-    weekly_days: [] as string[],
-    custom_interval: 1,
-    custom_unit: "days",
-    timezone: "Asia/Kolkata",
+    endDate: null as Date | null,
+         recurrence: "ONE_TIME",
+     oneTimeOption: "" as string,
+     recurringPattern: "WEEKLY" as string,
+     weekly_days: [] as string[],
+     custom_interval: 1,
+     custom_unit: "days",
+     timezone: "Asia/Kolkata",
+         // Enhanced scheduling fields
+     isAllDay: false,
+     customRecurrence: {
+      frequency: "daily",
+      interval: 1,
+      endAfterOccurrences: undefined,
+      endOnDate: undefined,
+      monthlyPattern: "day" as "day" | "weekday",
+      monthlyWeek: "1",
+      monthlyDay: "1",
+      yearlyPattern: "day" as "day" | "weekday",
+      yearlyMonth: "1",
+      yearlyWeek: "1",
+      yearlyDay: "1"
+    },
     // Throttling and retry policy
     throttling: {
       max_messages_per_minute: 100,
@@ -136,7 +218,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
   const [segmentQuery, setSegmentQuery] = useReactState("")
   const [debouncedSegmentQuery, setDebouncedSegmentQuery] = useReactState("")
   const [segmentOpen, setSegmentOpen] = useReactState(false)
-  const [segmentResults, setSegmentResults] = useReactState<Array<{ id: number; referenceId?: string; name: string; description?: string }>>([])
+  const [segmentResults, setSegmentResults] = useReactState<Array<{ id: number; referenceId?: string; reference_id?: string; name: string; description?: string }>>([])
   const [loadingSegments, setLoadingSegments] = useReactState(false)
   const [segmentError, setSegmentError] = useReactState<string | null>(null)
 
@@ -160,8 +242,8 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
     searchSegments(debouncedSegmentQuery, { limit: 20, page: 1 })
       .then((res) => {
         if (!isMounted) return
-        const items = res.data?.items || []
-        setSegmentResults(items.map((i) => ({ id: i.id, referenceId: (i as any).referenceId, name: i.name, description: i.description })))
+                 const items = res.data?.items || []
+         setSegmentResults(items.map((i) => ({ id: i.id, referenceId: (i as any).referenceId, reference_id: (i as any).reference_id, name: i.name, description: i.description })))
       })
       .catch((err) => {
         if (!isMounted) return
@@ -212,6 +294,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
   const [detailsError, setDetailsError] = useReactState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState<number | null>(null)
+  const [forceUpdate, setForceUpdate] = useState(0)
 
   // Function to save partial campaign data after each step
   const savePartialCampaign = async (stepNumber: number) => {
@@ -222,7 +305,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
         const payload: any = {
           name: campaignData.name,
           description: campaignData.description,
-          status: "ACTIVE"
+          status: "SCHEDULED"
         }
         
         // Add data based on current step
@@ -232,23 +315,58 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
         if (stepNumber >= 3 && campaignData.segmentRefId) {
           payload.segment_id = campaignData.segmentRefId
         }
-        if (stepNumber >= 4 && campaignData.scheduleDate && campaignData.startTime) {
-          const scheduleData = {
-            start_at: campaignData.scheduleDate ? format(campaignData.scheduleDate, "yyyy-MM-dd") + " " + campaignData.startTime + ":00" : undefined,
-            start_time: campaignData.startTime,
-            end_time: campaignData.endTime || undefined,
-            recurrence: campaignData.recurrence,
-            weekly_days: campaignData.selectedWeekDays.length > 0 ? campaignData.selectedWeekDays.map(day => day.toUpperCase()) : undefined,
-            custom_interval: campaignData.recurrence === "RECURRING" ? campaignData.customInterval : undefined,
-            custom_unit: campaignData.recurrence === "RECURRING" ? campaignData.customUnit : undefined,
-            timezone: campaignData.timezone
+        if (stepNumber >= 4) {
+          // Handle different schedule types based on recurrence and oneTimeOption
+          if (campaignData.recurrence === "ONE_TIME") {
+            payload.schedule_type = "ONE_TIME"
+            
+            if (campaignData.oneTimeOption === "IMMEDIATE") {
+              // For immediate campaigns, only send timezone
+              payload.schedule_json = {
+                timezone: campaignData.timezone
+              }
+            } else if (campaignData.oneTimeOption === "SCHEDULED" && campaignData.scheduleDate && campaignData.startTime) {
+              // For scheduled one-time campaigns, send start_at
+              const startAt = format(campaignData.scheduleDate, "yyyy-MM-dd") + "T" + campaignData.startTime + ":00"
+              payload.schedule_json = {
+                start_at: startAt,
+                timezone: campaignData.timezone
+              }
+            }
+          } else if (campaignData.recurrence === "RECURRING") {
+            // For recurring campaigns, send full scheduling details
+            const scheduleData: any = {
+              start_at: campaignData.scheduleDate ? format(campaignData.scheduleDate, "yyyy-MM-dd") + "T" + campaignData.startTime + ":00" : undefined,
+              timezone: campaignData.timezone
+            }
+            
+            // Add end_at if end date is provided
+            if (campaignData.endDate) {
+              scheduleData.end_at = format(campaignData.endDate, "yyyy-MM-dd") + "T" + (campaignData.endTime || "23:59") + ":00"
+            }
+            
+            // Add interval object based on recurring pattern
+            const intervalMap = {
+              "MINUTE": "minutes",
+              "HOUR": "hours", 
+              "DAILY": "days",
+              "WEEKLY": "weeks",
+              "MONTHLY": "months",
+              "YEARLY": "years"
+            }
+            
+            scheduleData.interval = {
+              value: campaignData.custom_interval,
+              unit: intervalMap[campaignData.recurringPattern as keyof typeof intervalMap] || "days"
+            }
+            
+            payload.schedule_type = "RECURRING"
+            payload.schedule_json = scheduleData
           }
-          payload.schedule_type = campaignData.recurrence
-          payload.schedule_json = JSON.stringify(scheduleData)
         }
         if (stepNumber >= 5) {
           // Create policy_json with audience_policy, throttling and retry policy nested inside
-          payload.policy_json = JSON.stringify({
+          payload.policy_json = {
             audience_policy: {
               max_audience_size: 5000,
               batch_size: 100,
@@ -258,12 +376,13 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
             },
             throttling: campaignData.throttling,
             retry_policy: campaignData.retry_policy
-          })
+          }
         }
         if (stepNumber >= 6 && campaignData.templateId) {
           payload.message_template_id = campaignData.templateId
         }
 
+        console.log('Debug - savePartialCampaign payload:', payload)
         const res = await createCampaign(payload)
         const refId = (res as any).data?.reference_id || (res as any).reference_id
         setCreatedRefId(refId || null)
@@ -289,7 +408,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
         const payload: any = {
           name: campaignData.name,
           description: campaignData.description,
-          status: "ACTIVE"
+          status: "SCHEDULED"
         }
         
         // Add data based on current step
@@ -299,23 +418,58 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
         if (stepNumber >= 3 && campaignData.segmentRefId) {
           payload.segment_id = campaignData.segmentRefId
         }
-        if (stepNumber >= 4 && campaignData.scheduleDate && campaignData.startTime) {
-          const scheduleData = {
-            start_at: campaignData.scheduleDate ? format(campaignData.scheduleDate, "yyyy-MM-dd") + " " + campaignData.startTime + ":00" : undefined,
-            start_time: campaignData.startTime,
-            end_time: campaignData.endTime || undefined,
-            recurrence: campaignData.recurrence,
-            weekly_days: campaignData.selectedWeekDays.length > 0 ? campaignData.selectedWeekDays.map(day => day.toUpperCase()) : undefined,
-            custom_interval: campaignData.recurrence === "RECURRING" ? campaignData.customInterval : undefined,
-            custom_unit: campaignData.recurrence === "RECURRING" ? campaignData.customUnit : undefined,
-            timezone: campaignData.timezone
+        if (stepNumber >= 4) {
+          // Handle different schedule types based on recurrence and oneTimeOption
+          if (campaignData.recurrence === "ONE_TIME") {
+            payload.schedule_type = "ONE_TIME"
+            
+            if (campaignData.oneTimeOption === "IMMEDIATE") {
+              // For immediate campaigns, only send timezone
+              payload.schedule_json = {
+                timezone: campaignData.timezone
+              }
+            } else if (campaignData.oneTimeOption === "SCHEDULED" && campaignData.scheduleDate && campaignData.startTime) {
+              // For scheduled one-time campaigns, send start_at
+              const startAt = format(campaignData.scheduleDate, "yyyy-MM-dd") + "T" + campaignData.startTime + ":00"
+              payload.schedule_json = {
+                start_at: startAt,
+                timezone: campaignData.timezone
+              }
+            }
+          } else if (campaignData.recurrence === "RECURRING") {
+            // For recurring campaigns, send full scheduling details
+            const scheduleData: any = {
+              start_at: campaignData.scheduleDate ? format(campaignData.scheduleDate, "yyyy-MM-dd") + "T" + campaignData.startTime + ":00" : undefined,
+              timezone: campaignData.timezone
+            }
+            
+            // Add end_at if end date is provided
+            if (campaignData.endDate) {
+              scheduleData.end_at = format(campaignData.endDate, "yyyy-MM-dd") + "T" + (campaignData.endTime || "23:59") + ":00"
+            }
+            
+            // Add interval object based on recurring pattern
+            const intervalMap = {
+              "MINUTE": "minutes",
+              "HOUR": "hours", 
+              "DAILY": "days",
+              "WEEKLY": "weeks",
+              "MONTHLY": "months",
+              "YEARLY": "years"
+            }
+            
+            scheduleData.interval = {
+              value: campaignData.custom_interval,
+              unit: intervalMap[campaignData.recurringPattern as keyof typeof intervalMap] || "days"
+            }
+            
+            payload.schedule_type = "RECURRING"
+            payload.schedule_json = scheduleData
           }
-          payload.schedule_type = campaignData.recurrence
-          payload.schedule_json = JSON.stringify(scheduleData)
         }
         if (stepNumber >= 5) {
           // Create policy_json with audience_policy, throttling and retry policy nested inside
-          payload.policy_json = JSON.stringify({
+          payload.policy_json = {
             audience_policy: {
               max_audience_size: 5000,
               batch_size: 100,
@@ -325,7 +479,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
             },
             throttling: campaignData.throttling,
             retry_policy: campaignData.retry_policy
-          })
+          }
         }
         if (stepNumber >= 6 && campaignData.templateId) {
           payload.message_template_id = campaignData.templateId
@@ -359,7 +513,7 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
       const payload: any = {
         name: campaignData.name,
         description: campaignData.description,
-        status: "ACTIVE"
+        status: "SCHEDULED"
       }
       if (campaignData.channel) payload.channel_name = campaignData.channel
       // Require a referenceId for segment
@@ -368,25 +522,63 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
       else throw new Error("Segment is required")
       if (campaignData.templateId) payload.message_template_id = campaignData.templateId
 
-      // Add scheduling data
-      if (campaignData.scheduleDate && campaignData.startTime) {
-        const scheduleData = {
-          start_at: campaignData.scheduleDate ? format(campaignData.scheduleDate, "yyyy-MM-dd") + " " + campaignData.startTime + ":00" : undefined,
-          start_time: campaignData.startTime,
-          end_time: campaignData.endTime || undefined,
-          recurrence: campaignData.recurrence,
-          weekly_days: campaignData.weekly_days.length > 0 ? campaignData.weekly_days.map(day => day.toUpperCase()) : undefined,
-          custom_interval: campaignData.recurrence === "RECURRING" ? campaignData.custom_interval : undefined,
-          custom_unit: campaignData.recurrence === "RECURRING" ? campaignData.custom_unit : undefined,
-          timezone: campaignData.timezone
-        }
-        
-        payload.schedule_type = campaignData.recurrence
-        payload.schedule_json = JSON.stringify(scheduleData)
-      }
+             // Add scheduling data
+       console.log('Debug - campaignData values:', {
+         recurrence: campaignData.recurrence,
+         oneTimeOption: campaignData.oneTimeOption,
+         scheduleDate: campaignData.scheduleDate,
+         startTime: campaignData.startTime
+       })
+       
+       if (campaignData.recurrence === "ONE_TIME") {
+         payload.schedule_type = "ONE_TIME"
+         
+         if (campaignData.oneTimeOption === "IMMEDIATE") {
+           // For immediate campaigns, only send timezone
+           payload.schedule_json = {
+             timezone: campaignData.timezone
+           }
+         } else if (campaignData.oneTimeOption === "SCHEDULED" && campaignData.scheduleDate && campaignData.startTime) {
+           // For scheduled one-time campaigns, send start_at
+           const startAt = format(campaignData.scheduleDate, "yyyy-MM-dd") + "T" + campaignData.startTime + ":00"
+           payload.schedule_json = {
+             start_at: startAt,
+             timezone: campaignData.timezone
+           }
+         }
+       } else if (campaignData.recurrence === "RECURRING") {
+         // For recurring campaigns, send full scheduling details
+         const scheduleData: any = {
+           start_at: campaignData.scheduleDate ? format(campaignData.scheduleDate, "yyyy-MM-dd") + "T" + campaignData.startTime + ":00" : undefined,
+           timezone: campaignData.timezone
+         }
+         
+         // Add end_at if end date is provided
+         if (campaignData.endDate) {
+           scheduleData.end_at = format(campaignData.endDate, "yyyy-MM-dd") + "T" + (campaignData.endTime || "23:59") + ":00"
+         }
+         
+         // Add interval object based on recurring pattern
+         const intervalMap = {
+           "MINUTE": "minutes",
+           "HOUR": "hours", 
+           "DAILY": "days",
+           "WEEKLY": "weeks",
+           "MONTHLY": "months",
+           "YEARLY": "years"
+         }
+         
+         scheduleData.interval = {
+           value: campaignData.custom_interval,
+           unit: intervalMap[campaignData.recurringPattern as keyof typeof intervalMap] || "days"
+         }
+         
+         payload.schedule_type = "RECURRING"
+         payload.schedule_json = scheduleData
+       }
 
       // Add throttling and retry policy
-      payload.policy_json = JSON.stringify({
+      payload.policy_json = {
         audience_policy: {
           max_audience_size: 5000,
           batch_size: 100,
@@ -396,23 +588,66 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
         },
         throttling: campaignData.throttling,
         retry_policy: campaignData.retry_policy
-      })
+      }
+
+      console.log('Debug - Final payload:', payload)
 
       if (restProps.mode === "edit" && restProps.referenceId) {
         const res = await updateCampaign(restProps.referenceId, payload)
         const refId = (res as any).data?.reference_id || restProps.referenceId
         setCreatedRefId(refId || null)
+        
+        // Launch the updated campaign
+        if (refId) {
+          try {
+            const launchRes = await launchCampaign(refId)
+            toast({ 
+              title: "Campaign Updated & Launched", 
+              description: `Campaign updated and launch queued. Status: ${launchRes.data?.status ?? "OK"}` 
+            })
+          } catch (launchErr) {
+            console.error('Launch failed:', launchErr)
+            toast({
+              title: "Campaign Updated",
+              description: "Campaign updated successfully, but launch failed. You can launch it manually later.",
+              variant: "destructive"
+            })
+          }
+        }
       } else {
+        console.log('Debug - handleSubmit createCampaign payload:', payload)
         const res = await createCampaign(payload)
         const refId = (res as any).data?.reference_id || (res as any).reference_id
         setCreatedRefId(refId || null)
+        
+        // Launch the new campaign
+        if (refId) {
+          try {
+            const launchRes = await launchCampaign(refId)
+            toast({ 
+              title: "Campaign Created & Launched", 
+              description: `Campaign created and launch queued. Status: ${launchRes.data?.status ?? "OK"}` 
+            })
+          } catch (launchErr) {
+            console.error('Launch failed:', launchErr)
+            toast({
+              title: "Campaign Created",
+              description: "Campaign created successfully, but launch failed. You can launch it manually later.",
+              variant: "destructive"
+            })
+          }
+        }
       }
 
-    toast({
-      title: restProps.mode === "edit" ? "Campaign Updated Successfully" : "Campaign Created Successfully",
-      description: `${campaignData.name} has been ${restProps.mode === "edit" ? "updated" : "created"}. Ref: ${createdRefId ?? "n/a"}`,
-    })
-      // Keep modal open; user can proceed steps normally
+    // Toast messages are now handled above with launch status
+    
+    // Close modal and refresh campaigns list to reflect changes
+    onOpenChange(false)
+    
+    // Call refresh callback to update the campaigns list smoothly
+    if (restProps.onRefresh) {
+      restProps.onRefresh()
+    }
     } catch (err) {
       toast({
         title: restProps.mode === "edit" ? "Failed to update campaign" : "Failed to create campaign",
@@ -429,10 +664,54 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
       case 1: return campaignData.name.trim() !== ""
       case 2: return campaignData.channel !== ""
       case 3: return !!campaignData.segmentRefId
-      case 4: return !!campaignData.scheduleDate && !!campaignData.startTime
+             case 4: {
+        // Simple: If IMMEDIATE is selected, enable Next button
+        if (campaignData.oneTimeOption === "IMMEDIATE") {
+          return true
+        }
+        // For SCHEDULED and RECURRING, need date and time
+        if (campaignData.oneTimeOption === "SCHEDULED" || campaignData.recurrence === "RECURRING") {
+          return !!campaignData.scheduleDate && !!campaignData.startTime
+        }
+        return false
+      }
       case 5: return true // Throttling and retry policy step is always valid
       case 6: return !!campaignData.templateId
       default: return true
+    }
+  }
+
+  // Debug function to check step 4 validation
+  const debugStep4Validation = () => {
+    if (step === 4) {
+      const isImmediate = campaignData.recurrence === "ONE_TIME" && campaignData.oneTimeOption === "IMMEDIATE"
+      const isScheduled = campaignData.recurrence === "ONE_TIME" && campaignData.oneTimeOption === "SCHEDULED"
+      const isRecurring = campaignData.recurrence === "RECURRING"
+      
+      console.log('Step 4 Validation Debug:', {
+        recurrence: campaignData.recurrence,
+        oneTimeOption: campaignData.oneTimeOption,
+        isImmediate,
+        isScheduled,
+        isRecurring,
+        scheduleDate: campaignData.scheduleDate,
+        startTime: campaignData.startTime,
+        scheduleDateValid: !!campaignData.scheduleDate,
+        startTimeValid: !!campaignData.startTime,
+        step4Valid: isImmediate || (isScheduled && !!campaignData.scheduleDate && !!campaignData.startTime) || (isRecurring && !!campaignData.scheduleDate && !!campaignData.startTime)
+      })
+    }
+  }
+
+  // Debug function to check step 3 validation
+  const debugStep3Validation = () => {
+    if (step === 3) {
+      console.log('Step 3 Validation Debug:', {
+        segmentRefId: campaignData.segmentRefId,
+        segment: campaignData.segment,
+        segmentResults: segmentResults.map(s => ({ name: s.name, referenceId: s.referenceId, reference_id: s.reference_id })),
+        isValid: !!campaignData.segmentRefId
+      })
     }
   }
 
@@ -452,15 +731,47 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
         template: restProps.initial?.templateBody ?? prev.template,
         throttling: restProps.initial?.throttling ?? prev.throttling,
         retry_policy: restProps.initial?.retry_policy ?? prev.retry_policy,
-        // Parse schedule data if available
-        scheduleDate: restProps.initial?.scheduleDate ? new Date(restProps.initial.scheduleDate) : prev.scheduleDate,
-        startTime: restProps.initial?.startTime ?? prev.startTime,
-        endTime: restProps.initial?.endTime ?? prev.endTime,
-        recurrence: restProps.initial?.recurrence ?? prev.recurrence,
-        weekly_days: restProps.initial?.weekly_days ?? prev.weekly_days,
-        custom_interval: restProps.initial?.custom_interval ?? prev.custom_interval,
-        custom_unit: restProps.initial?.custom_unit ?? prev.custom_unit,
-        timezone: restProps.initial?.timezone ?? prev.timezone,
+        // Parse schedule data from schedule_json if available
+        ...(() => {
+          try {
+            const scheduleJson = restProps.initial?.schedule_json ? JSON.parse(restProps.initial.schedule_json) : null
+            if (scheduleJson) {
+              return {
+                scheduleDate: scheduleJson.start_at ? new Date(scheduleJson.start_at.split('T')[0]) : prev.scheduleDate,
+                startTime: scheduleJson.start_at ? scheduleJson.start_at.split('T')[1]?.substring(0, 5) : scheduleJson.start_time || prev.startTime,
+                endTime: scheduleJson.end_time ?? prev.endTime,
+                endDate: scheduleJson.end_at ? new Date(scheduleJson.end_at.split('T')[0]) : prev.endDate,
+                recurrence: restProps.initial?.schedule_type ?? prev.recurrence,
+                oneTimeOption: restProps.initial?.schedule_type === "ONE_TIME" ? 
+                  (scheduleJson.start_at ? "SCHEDULED" : "IMMEDIATE") : prev.oneTimeOption,
+                recurringPattern: scheduleJson.recurrence ?? prev.recurringPattern,
+                weekly_days: scheduleJson.weekly_days ?? prev.weekly_days,
+                custom_interval: scheduleJson.custom_interval ?? prev.custom_interval,
+                custom_unit: scheduleJson.custom_unit ?? prev.custom_unit,
+                timezone: scheduleJson.timezone ?? prev.timezone,
+              }
+            }
+          } catch (e) {
+            console.error('Error parsing schedule_json:', e)
+          }
+          return {
+            scheduleDate: restProps.initial?.scheduleDate ? new Date(restProps.initial.scheduleDate) : prev.scheduleDate,
+            startTime: restProps.initial?.startTime ?? prev.startTime,
+            endTime: restProps.initial?.endTime ?? prev.endTime,
+            endDate: restProps.initial?.endDate ? new Date(restProps.initial.endDate) : prev.endDate,
+            recurrence: restProps.initial?.recurrence ?? prev.recurrence,
+            oneTimeOption: restProps.initial?.oneTimeOption ?? 
+              (restProps.initial?.recurrence === "ONE_TIME" && restProps.initial?.scheduleDate ? "SCHEDULED" : "IMMEDIATE"),
+            recurringPattern: restProps.initial?.recurringPattern ?? prev.recurringPattern,
+            weekly_days: restProps.initial?.weekly_days ?? prev.weekly_days,
+            custom_interval: restProps.initial?.custom_interval ?? prev.custom_interval,
+            custom_unit: restProps.initial?.custom_unit ?? prev.custom_unit,
+            timezone: restProps.initial?.timezone ?? prev.timezone,
+          }
+        })(),
+                 // Enhanced scheduling fields
+         isAllDay: restProps.initial?.isAllDay ?? prev.isAllDay,
+         customRecurrence: restProps.initial?.customRecurrence ?? prev.customRecurrence,
       }))
       setCreatedRefId(restProps.referenceId ?? null)
     }
@@ -496,8 +807,13 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
     }))
   }
 
+  // Simple close handler
+  const handleClose = (open: boolean) => {
+    onOpenChange(open)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{restProps.mode === "edit" ? "Edit Campaign" : "Create Campaign"}</DialogTitle>
@@ -569,9 +885,10 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
             </div>
           )}
 
-          {step === 3 && (
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Target Segment</h3>
+                     {step === 3 && (
+             <div className="space-y-4">
+               <h3 className="text-lg font-semibold">Target Segment</h3>
+               {(() => { debugStep3Validation(); return null; })()}
               <Popover open={segmentOpen} onOpenChange={setSegmentOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" aria-expanded={segmentOpen} className="w-full justify-between">
@@ -589,14 +906,14 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
                     )}
                     <CommandGroup className="max-h-48 overflow-y-auto">
                       {segmentResults.map((s) => (
-                        <CommandItem
-                          key={s.id}
-                          value={`${s.id} ${s.name}`}
-                          onSelect={() => {
-                            setCampaignData({ ...campaignData, segment: s.name, segmentId: s.id, segmentRefId: s.referenceId ?? null })
-                            setSegmentOpen(false)
-                          }}
-                        >
+                                                 <CommandItem
+                           key={s.id}
+                           value={`${s.id} ${s.name}`}
+                           onSelect={() => {
+                             setCampaignData({ ...campaignData, segment: s.name, segmentId: s.id, segmentRefId: s.reference_id ?? s.referenceId ?? null })
+                             setSegmentOpen(false)
+                           }}
+                         >
                           {s.name}
                         </CommandItem>
                       ))}
@@ -607,164 +924,673 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
             </div>
           )}
 
-          {step === 4 && (
-            <div className="space-y-6">
-              <h3 className="text-lg font-semibold">Schedule Campaign</h3>
-              
-              {/* Date Selection */}
-              <div className="space-y-2">
-                <Label>Start Date</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !campaignData.scheduleDate && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {campaignData.scheduleDate ? format(campaignData.scheduleDate, "PPP") : "Pick a date"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={campaignData.scheduleDate}
-                      onSelect={(date) => setCampaignData({ ...campaignData, scheduleDate: date })}
-                      initialFocus
-                      disabled={(date) => {
-                        // Allow today's date, only disable past dates
-                        const today = new Date()
-                        today.setHours(0, 0, 0, 0)
-                        const selectedDate = new Date(date)
-                        selectedDate.setHours(0, 0, 0, 0)
-                        return selectedDate < today
-                      }}
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-                             {/* Time Selection */}
-               <div className="grid grid-cols-2 gap-4">
-                 <div className="space-y-2">
-                   <Label>Start Time</Label>
-                   <div className="flex gap-2">
-                     <Select value={campaignData.startTime} onValueChange={(value) => setCampaignData({ ...campaignData, startTime: value })}>
-                       <SelectTrigger className="flex-1">
-                         <SelectValue placeholder="Select start time" />
-                       </SelectTrigger>
-                       <SelectContent>
-                         {timeSlots.map((slot) => (
-                           <SelectItem key={slot.value} value={slot.value}>
-                             {slot.label}
-                           </SelectItem>
-                         ))}
-                       </SelectContent>
-                     </Select>
-                     <Input
-                       type="time"
-                       value={campaignData.startTime}
-                       onChange={(e) => setCampaignData({ ...campaignData, startTime: e.target.value })}
-                       className="w-32"
-                       placeholder="HH:MM"
-                     />
-                   </div>
-                   <p className="text-xs text-muted-foreground">Use dropdown for quick selection or type custom time</p>
-                 </div>
-                 <div className="space-y-2">
-                   <Label>End Time (Optional)</Label>
-                   <div className="flex gap-2">
-                     <Select value={campaignData.endTime} onValueChange={(value) => setCampaignData({ ...campaignData, endTime: value })}>
-                       <SelectTrigger className="flex-1">
-                         <SelectValue placeholder="Select end time" />
-                       </SelectTrigger>
-                       <SelectContent>
-                         {timeSlots.map((slot) => (
-                           <SelectItem key={slot.value} value={slot.value}>
-                             {slot.label}
-                           </SelectItem>
-                         ))}
-                       </SelectContent>
-                     </Select>
-                     <Input
-                       type="time"
-                       value={campaignData.endTime}
-                       onChange={(e) => setCampaignData({ ...campaignData, endTime: e.target.value })}
-                       className="w-32"
-                       placeholder="HH:MM"
-                     />
-                   </div>
-                   <p className="text-xs text-muted-foreground">Use dropdown for quick selection or type custom time</p>
-                 </div>
-               </div>
-
-              {/* Recurrence Options */}
-              <div className="space-y-4">
-                <Label>Recurrence</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {recurrenceOptions.map((option) => (
-                    <Button
-                      key={option.value}
-                      variant={campaignData.recurrence === option.value ? "default" : "outline"}
-                      className="justify-start"
-                      onClick={() => setCampaignData({ ...campaignData, recurrence: option.value })}
-                    >
-                      <Repeat className="mr-2 h-4 w-4" />
-                      {option.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Weekly Days Selection */}
-              {campaignData.recurrence === "WEEKLY" && (
-                <div className="space-y-2">
-                  <Label>Select Days</Label>
-                  <div className="grid grid-cols-7 gap-2">
-                    {weekDays.map((day) => (
+                     {step === 4 && (
+             <div className="space-y-6">
+               <h3 className="text-lg font-semibold">Schedule Campaign</h3>
+               {(() => { debugStep4Validation(); return null; })()}
+               
+                               {/* Recurrence Options - Moved to top */}
+                <div className="space-y-4">
+                  <Label>Recurrence</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {recurrenceOptions.map((option) => (
                       <Button
-                        key={day.value}
-                        variant={campaignData.weekly_days.includes(day.value) ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => toggleWeekDay(day.value)}
+                        key={option.value}
+                        variant={campaignData.recurrence === option.value ? "default" : "outline"}
+                        className="justify-start"
+                        onClick={() => setCampaignData({ 
+                          ...campaignData, 
+                          recurrence: option.value,
+                          // Reset recurring pattern when changing recurrence type
+                          recurringPattern: option.value === "RECURRING" ? "WEEKLY" : campaignData.recurringPattern,
+                          // Reset one-time option when changing recurrence type
+                          oneTimeOption: option.value === "ONE_TIME" ? "" : campaignData.oneTimeOption
+                        })}
                       >
-                        {day.label.slice(0, 3)}
+                        <Repeat className="mr-2 h-4 w-4" />
+                        {option.label}
                       </Button>
                     ))}
                   </div>
                 </div>
-              )}
 
-              {/* Custom Interval */}
-              {campaignData.recurrence === "RECURRING" && (
-                <div className="grid grid-cols-2 gap-4">
+                {/* One Time Options - Only show when ONE_TIME is selected */}
+                {campaignData.recurrence === "ONE_TIME" && (
                   <div className="space-y-2">
-                    <Label>Interval</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      value={campaignData.custom_interval}
-                      onChange={(e) => setCampaignData({ ...campaignData, custom_interval: parseInt(e.target.value) || 1 })}
-                    />
+                    <Label>Delivery Option</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {oneTimeOptions.map((option) => (
+                        <Button
+                          key={option.value}
+                          variant={campaignData.oneTimeOption === option.value ? "default" : "outline"}
+                          className="justify-start"
+                          onClick={() => {
+                            console.log('Debug - Setting oneTimeOption to:', option.value)
+                            setCampaignData({ ...campaignData, oneTimeOption: option.value })
+                          }}
+                        >
+                          {option.value === "IMMEDIATE" ? <Clock className="mr-2 h-4 w-4" /> : <CalendarIcon className="mr-2 h-4 w-4" />}
+                          {option.label}
+                        </Button>
+                      ))}
+                    </div>
                   </div>
+                )}
+
+                               {/* Unit Selection - Only show when RECURRING is selected */}
+                {campaignData.recurrence === "RECURRING" && (
                   <div className="space-y-2">
                     <Label>Unit</Label>
-                                         <Select value={campaignData.custom_unit} onValueChange={(value) => setCampaignData({ ...campaignData, custom_unit: value })}>
+                    <Select 
+                      value={campaignData.recurringPattern} 
+                      onValueChange={(value) => setCampaignData({ ...campaignData, recurringPattern: value })}
+                    >
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder="Select unit" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="days">Days</SelectItem>
-                        <SelectItem value="weeks">Weeks</SelectItem>
-                        <SelectItem value="months">Months</SelectItem>
-                        <SelectItem value="years">Years</SelectItem>
+                        {recurringPatterns.map((pattern) => (
+                          <SelectItem key={pattern.value} value={pattern.value}>
+                            {pattern.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
+                )}
+
+
+
+                               {/* Date & Time Selection - Only show for scheduled campaigns or recurring campaigns */}
+                {(campaignData.recurrence === "RECURRING" || 
+                  (campaignData.recurrence === "ONE_TIME" && campaignData.oneTimeOption === "SCHEDULED")) && (
+                  <div className={cn(
+                    "gap-4",
+                    // Show single column for one-time scheduled, two columns for recurring
+                    campaignData.recurrence === "ONE_TIME" ? "grid grid-cols-1" : "grid grid-cols-2"
+                  )}>
+                 <div className="space-y-2">
+                   <Label>Start Date & Time</Label>
+                   <div className="flex gap-2">
+                     <Popover>
+                       <PopoverTrigger asChild>
+                         <Button
+                           variant="outline"
+                           className={cn(
+                             "flex-1 justify-start text-left font-normal",
+                             !campaignData.scheduleDate && "text-muted-foreground"
+                           )}
+                         >
+                           <CalendarIcon className="mr-2 h-4 w-4" />
+                           {campaignData.scheduleDate ? format(campaignData.scheduleDate, "PPP") : "Pick a date"}
+                         </Button>
+                       </PopoverTrigger>
+                       <PopoverContent className="w-auto p-0">
+                         <Calendar
+                           mode="single"
+                           selected={campaignData.scheduleDate}
+                           onSelect={(date) => setCampaignData({ ...campaignData, scheduleDate: date })}
+                           initialFocus
+                           disabled={(date) => {
+                             // Allow today's date, only disable past dates
+                             const today = new Date()
+                             today.setHours(0, 0, 0, 0)
+                             const selectedDate = new Date(date)
+                             selectedDate.setHours(0, 0, 0, 0)
+                             return selectedDate < today
+                           }}
+                         />
+                       </PopoverContent>
+                     </Popover>
+                     <Input
+                       type="time"
+                       value={campaignData.startTime}
+                       onChange={(e) => setCampaignData({ ...campaignData, startTime: e.target.value })}
+                       className="w-24"
+                       placeholder="HH:MM"
+                     />
+                   </div>
+                 </div>
+
+                 {/* End Date & Time - Only show for recurring campaigns */}
+                 {campaignData.recurrence === "RECURRING" && (
+                   <div className="space-y-2">
+                     <Label>End Date & Time (Optional)</Label>
+                     <div className="flex gap-2">
+                       <Popover>
+                         <PopoverTrigger asChild>
+                           <Button
+                             variant="outline"
+                             className={cn(
+                               "flex-1 justify-start text-left font-normal",
+                               !campaignData.endDate && "text-muted-foreground"
+                             )}
+                           >
+                             <CalendarIcon className="mr-2 h-4 w-4" />
+                             {campaignData.endDate ? format(campaignData.endDate, "PPP") : "Pick end date"}
+                           </Button>
+                         </PopoverTrigger>
+                         <PopoverContent className="w-auto p-0">
+                           <Calendar
+                             mode="single"
+                             selected={campaignData.endDate}
+                             onSelect={(date) => setCampaignData({ ...campaignData, endDate: date })}
+                             initialFocus
+                             disabled={(date) => {
+                               if (!campaignData.scheduleDate) return true
+                               const startDate = new Date(campaignData.scheduleDate)
+                               startDate.setHours(0, 0, 0, 0)
+                               const selectedDate = new Date(date)
+                               selectedDate.setHours(0, 0, 0, 0)
+                               return selectedDate < startDate
+                             }}
+                           />
+                         </PopoverContent>
+                       </Popover>
+                       <Input
+                         type="time"
+                         value={campaignData.endTime}
+                         onChange={(e) => setCampaignData({ ...campaignData, endTime: e.target.value })}
+                         className="w-24"
+                         placeholder="HH:MM"
+                       />
+                     </div>
+                   </div>
+                 )}
+               </div>
+                 )}
+
+                                            {/* Minute Pattern */}
+               {campaignData.recurrence === "RECURRING" && campaignData.recurringPattern === "MINUTE" && (
+                 <div className="space-y-2">
+                   <Label>Every</Label>
+                   <div className="flex items-center gap-2">
+                     <Input
+                       type="number"
+                       min="1"
+                       max="59"
+                       value={campaignData.custom_interval}
+                       onChange={(e) => setCampaignData({ ...campaignData, custom_interval: parseInt(e.target.value) || 1 })}
+                       className="w-20"
+                     />
+                     <span className="text-sm text-muted-foreground">minute(s)</span>
+                   </div>
+                   <p className="text-xs text-muted-foreground">Campaign will run every {campaignData.custom_interval} minute(s)</p>
+                 </div>
+               )}
+
+               {/* Hour Pattern */}
+               {campaignData.recurrence === "RECURRING" && campaignData.recurringPattern === "HOUR" && (
+                 <div className="space-y-2">
+                   <Label>Every</Label>
+                   <div className="flex items-center gap-2">
+                     <Input
+                       type="number"
+                       min="1"
+                       max="23"
+                       value={campaignData.custom_interval}
+                       onChange={(e) => setCampaignData({ ...campaignData, custom_interval: parseInt(e.target.value) || 1 })}
+                       className="w-20"
+                     />
+                     <span className="text-sm text-muted-foreground">hour(s)</span>
+                   </div>
+                   <p className="text-xs text-muted-foreground">Campaign will run every {campaignData.custom_interval} hour(s)</p>
+                 </div>
+               )}
+
+               {/* Daily Pattern */}
+               {campaignData.recurrence === "RECURRING" && campaignData.recurringPattern === "DAILY" && (
+                 <div className="space-y-2">
+                   <Label>Every</Label>
+                   <div className="flex items-center gap-2">
+                     <Input
+                       type="number"
+                       min="1"
+                       max="31"
+                       value={campaignData.custom_interval}
+                       onChange={(e) => setCampaignData({ ...campaignData, custom_interval: parseInt(e.target.value) || 1 })}
+                       className="w-20"
+                     />
+                     <span className="text-sm text-muted-foreground">day(s)</span>
+                   </div>
+                   <p className="text-xs text-muted-foreground">Campaign will run every {campaignData.custom_interval} day(s)</p>
+                 </div>
+               )}
+
+               {/* Weekly Days Selection */}
+               {campaignData.recurrence === "RECURRING" && campaignData.recurringPattern === "WEEKLY" && (
+                 <div className="space-y-2">
+                   <Label>Select Days</Label>
+                   <div className="grid grid-cols-7 gap-2">
+                     {weekDays.map((day) => (
+                       <Button
+                         key={day.value}
+                         variant={campaignData.weekly_days.includes(day.value) ? "default" : "outline"}
+                         size="sm"
+                         onClick={() => toggleWeekDay(day.value)}
+                       >
+                         {day.label.slice(0, 3)}
+                       </Button>
+                     ))}
+                   </div>
+                 </div>
+               )}
+
+                             {/* Monthly Pattern */}
+               {campaignData.recurrence === "RECURRING" && campaignData.recurringPattern === "MONTHLY" && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Monthly Pattern</Label>
+                    <div className="flex gap-4">
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          id="monthlyDay"
+                          name="monthlyPattern"
+                          value="day"
+                          checked={campaignData.customRecurrence.monthlyPattern === "day"}
+                          onChange={() => setCampaignData({
+                            ...campaignData,
+                            customRecurrence: {
+                              ...campaignData.customRecurrence,
+                              monthlyPattern: "day"
+                            }
+                          })}
+                        />
+                        <Label htmlFor="monthlyDay">Day of month</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          id="monthlyWeekday"
+                          name="monthlyPattern"
+                          value="weekday"
+                          checked={campaignData.customRecurrence.monthlyPattern === "weekday"}
+                          onChange={() => setCampaignData({
+                            ...campaignData,
+                            customRecurrence: {
+                              ...campaignData.customRecurrence,
+                              monthlyPattern: "weekday"
+                            }
+                          })}
+                        />
+                        <Label htmlFor="monthlyWeekday">Day of week</Label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {campaignData.customRecurrence.monthlyPattern === "day" && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Day of Month</Label>
+                        <Select 
+                          value={campaignData.customRecurrence.monthlyDay} 
+                          onValueChange={(value) => setCampaignData({
+                            ...campaignData,
+                            customRecurrence: {
+                              ...campaignData.customRecurrence,
+                              monthlyDay: value
+                            }
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {monthOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
+
+                  {campaignData.customRecurrence.monthlyPattern === "weekday" && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Week of Month</Label>
+                        <Select 
+                          value={campaignData.customRecurrence.monthlyWeek} 
+                          onValueChange={(value) => setCampaignData({
+                            ...campaignData,
+                            customRecurrence: {
+                              ...campaignData.customRecurrence,
+                              monthlyWeek: value
+                            }
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {monthOptions.slice(0, 5).map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.value === "last" ? "Last" : `${option.label} week`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Day of Week</Label>
+                        <Select 
+                          value={campaignData.customRecurrence.monthlyDay} 
+                          onValueChange={(value) => setCampaignData({
+                            ...campaignData,
+                            customRecurrence: {
+                              ...campaignData.customRecurrence,
+                              monthlyDay: value
+                            }
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {weekDays.map((day) => (
+                              <SelectItem key={day.value} value={day.value}>
+                                {day.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
+
+                             {/* Yearly Pattern */}
+               {campaignData.recurrence === "RECURRING" && campaignData.recurringPattern === "YEARLY" && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Yearly Pattern</Label>
+                    <div className="flex gap-4">
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          id="yearlyDay"
+                          name="yearlyPattern"
+                          value="day"
+                          checked={campaignData.customRecurrence.yearlyPattern === "day"}
+                          onChange={() => setCampaignData({
+                            ...campaignData,
+                            customRecurrence: {
+                              ...campaignData.customRecurrence,
+                              yearlyPattern: "day"
+                            }
+                          })}
+                        />
+                        <Label htmlFor="yearlyDay">Day of year</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          id="yearlyWeekday"
+                          name="yearlyPattern"
+                          value="weekday"
+                          checked={campaignData.customRecurrence.yearlyPattern === "weekday"}
+                          onChange={() => setCampaignData({
+                            ...campaignData,
+                            customRecurrence: {
+                              ...campaignData.customRecurrence,
+                              yearlyPattern: "weekday"
+                            }
+                          })}
+                        />
+                        <Label htmlFor="yearlyWeekday">Day of week</Label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {campaignData.customRecurrence.yearlyPattern === "day" && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Month</Label>
+                        <Select 
+                          value={campaignData.customRecurrence.yearlyMonth} 
+                          onValueChange={(value) => setCampaignData({
+                            ...campaignData,
+                            customRecurrence: {
+                              ...campaignData.customRecurrence,
+                              yearlyMonth: value
+                            }
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {monthNames.map((month, index) => (
+                              <SelectItem key={index + 1} value={(index + 1).toString()}>
+                                {month}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Day of Month</Label>
+                        <Select 
+                          value={campaignData.customRecurrence.yearlyDay} 
+                          onValueChange={(value) => setCampaignData({
+                            ...campaignData,
+                            customRecurrence: {
+                              ...campaignData.customRecurrence,
+                              yearlyDay: value
+                            }
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {monthOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
+
+                  {campaignData.customRecurrence.yearlyPattern === "weekday" && (
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label>Month</Label>
+                        <Select 
+                          value={campaignData.customRecurrence.yearlyMonth} 
+                          onValueChange={(value) => setCampaignData({
+                            ...campaignData,
+                            customRecurrence: {
+                              ...campaignData.customRecurrence,
+                              yearlyMonth: value
+                            }
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {monthNames.map((month, index) => (
+                              <SelectItem key={index + 1} value={(index + 1).toString()}>
+                                {month}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Week of Month</Label>
+                        <Select 
+                          value={campaignData.customRecurrence.yearlyWeek} 
+                          onValueChange={(value) => setCampaignData({
+                            ...campaignData,
+                            customRecurrence: {
+                              ...campaignData.customRecurrence,
+                              yearlyWeek: value
+                            }
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {monthOptions.slice(0, 5).map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.value === "last" ? "Last" : `${option.label} week`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Day of Week</Label>
+                        <Select 
+                          value={campaignData.customRecurrence.yearlyDay} 
+                          onValueChange={(value) => setCampaignData({
+                            ...campaignData,
+                            customRecurrence: {
+                              ...campaignData.customRecurrence,
+                              yearlyDay: value
+                            }
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {weekDays.map((day) => (
+                              <SelectItem key={day.value} value={day.value}>
+                                {day.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+                             
+
+                                                           {/* End Conditions - Temporarily commented out */}
+                {/* {campaignData.recurrence === "RECURRING" && (
+                 <div className="space-y-4">
+                   <Label>End Conditions</Label>
+                   <div className="space-y-4">
+                     <div className="flex items-center space-x-2">
+                       <input
+                         type="radio"
+                         id="endNever"
+                         name="endCondition"
+                         checked={!campaignData.customRecurrence.endAfterOccurrences && !campaignData.customRecurrence.endOnDate}
+                         onChange={() => setCampaignData({
+                           ...campaignData,
+                           customRecurrence: {
+                             ...campaignData.customRecurrence,
+                             endAfterOccurrences: undefined,
+                             endOnDate: undefined
+                           }
+                         })}
+                       />
+                       <Label htmlFor="endNever">Never</Label>
+                     </div>
+                     <div className="flex items-center space-x-2">
+                       <input
+                         type="radio"
+                         id="endAfter"
+                         name="endCondition"
+                         checked={!!campaignData.customRecurrence.endAfterOccurrences}
+                         onChange={() => setCampaignData({
+                           ...campaignData,
+                           customRecurrence: {
+                             ...campaignData.customRecurrence,
+                             endAfterOccurrences: 10,
+                             endOnDate: undefined
+                           }
+                         })}
+                       />
+                       <Label htmlFor="endAfter">After</Label>
+                       <Input
+                         type="number"
+                         min="1"
+                         value={campaignData.customRecurrence.endAfterOccurrences || ""}
+                         onChange={(e) => setCampaignData({
+                           ...campaignData,
+                           customRecurrence: {
+                             ...campaignData.customRecurrence,
+                             endAfterOccurrences: parseInt(e.target.value) || undefined
+                           }
+                         })}
+                         className="w-20"
+                         disabled={!campaignData.customRecurrence.endAfterOccurrences}
+                       />
+                       <span>occurrences</span>
+                     </div>
+                     <div className="flex items-center space-x-2">
+                       <input
+                         type="radio"
+                         id="endOnDate"
+                         name="endCondition"
+                         checked={!!campaignData.customRecurrence.endOnDate}
+                         onChange={() => setCampaignData({
+                           ...campaignData,
+                           customRecurrence: {
+                             ...campaignData.customRecurrence,
+                             endAfterOccurrences: undefined,
+                             endOnDate: new Date()
+                           }
+                         })}
+                       />
+                       <Label htmlFor="endOnDate">On</Label>
+                       <Popover>
+                         <PopoverTrigger asChild>
+                           <Button
+                             variant="outline"
+                             className={cn(
+                               "w-40 justify-start text-left font-normal",
+                               !campaignData.customRecurrence.endOnDate && "text-muted-foreground"
+                             )}
+                             disabled={!campaignData.customRecurrence.endOnDate}
+                           >
+                             <CalendarIcon className="mr-2 h-4 w-4" />
+                             {campaignData.customRecurrence.endOnDate ? format(campaignData.customRecurrence.endOnDate, "PPP") : "Pick a date"}
+                           </Button>
+                         </PopoverTrigger>
+                         <PopoverContent className="w-auto p-0">
+                           <Calendar
+                             mode="single"
+                             selected={campaignData.customRecurrence.endOnDate}
+                             onSelect={(date) => setCampaignData({
+                               ...campaignData,
+                               customRecurrence: {
+                                 ...campaignData.customRecurrence,
+                                 endOnDate: date
+                               }
+                             })}
+                             initialFocus
+                             disabled={(date) => {
+                               if (!campaignData.scheduleDate) return true
+                               const startDate = new Date(campaignData.scheduleDate)
+                               startDate.setHours(0, 0, 0, 0)
+                               const selectedDate = new Date(date)
+                               selectedDate.setHours(0, 0, 0, 0)
+                               return selectedDate < startDate
+                             }}
+                           />
+                         </PopoverContent>
+                       </Popover>
+                     </div>
+                   </div>
+                 </div>
+               )} */}
 
               {/* Timezone */}
               <div className="space-y-2">
@@ -778,6 +1604,10 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
                     <SelectItem value="UTC">UTC</SelectItem>
                     <SelectItem value="America/New_York">America/New_York (EST)</SelectItem>
                     <SelectItem value="Europe/London">Europe/London (GMT)</SelectItem>
+                    <SelectItem value="Asia/Tokyo">Asia/Tokyo (JST)</SelectItem>
+                    <SelectItem value="Australia/Sydney">Australia/Sydney (AEDT)</SelectItem>
+                    <SelectItem value="America/Los_Angeles">America/Los_Angeles (PST)</SelectItem>
+                    <SelectItem value="Europe/Paris">Europe/Paris (CET)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1064,29 +1894,28 @@ export function CreateCampaignModal({ open, onOpenChange, ...restProps }: Create
             Previous
           </Button>
           
-          {step < 7 ? (
+          {step <= 7 ? (
             <Button onClick={async () => {
-              // Only create the campaign after required selections (end of step 6)
-              if (step < 6) {
+              // Go to next step for all steps except the final one
+              if (step < 7) {
                 await nextStep()
                 return
               }
-              if (step === 6) {
+              // In step 7, complete the campaign
+              if (step === 7) {
                 await handleSubmit()
-                await nextStep()
                 return
               }
-              await nextStep()
             }} disabled={
               (step === 1 && campaignData.name.trim() === "") ||
               (step === 2 && !campaignData.channel) ||
               (step === 3 && !campaignData.segmentRefId) ||
-              (step === 4 && (!campaignData.scheduleDate || !campaignData.startTime)) ||
+              (step === 4 && !isStepValid()) ||
               (step === 5 && false) || // Throttling step is always valid
               (step === 6 && (!campaignData.templateId || creating)) ||
               saving // Disable button while saving
             }>
-              {saving ? "Saving..." : "Next"}
+              {saving ? "Saving..." : (step === 7 ? "Launch" : "Next")}
               <ChevronRight className="w-4 h-4 ml-2" />
             </Button>
           ) : (

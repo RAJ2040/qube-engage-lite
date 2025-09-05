@@ -94,6 +94,21 @@ export default function Campaigns() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const refreshCampaigns = () => {
+    setLoading(true)
+    setError(null)
+    fetchCampaigns({ page: 1, limit: 20 })
+      .then((res) => {
+        setItems(res.data.items || [])
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to load campaigns")
+      })
+      .finally(() => {
+        setLoading(false)
+      })
+  }
+
   useEffect(() => {
     let isMounted = true
     setLoading(true)
@@ -392,7 +407,7 @@ export default function Campaigns() {
         </CardContent>
       </Card>
 
-      <CreateCampaignModal open={showCreateModal} onOpenChange={setShowCreateModal} />
+      <CreateCampaignModal open={showCreateModal} onOpenChange={setShowCreateModal} onRefresh={refreshCampaigns} />
       {editRefId && (
         <CreateCampaignModal
           open={!!editRefId}
@@ -400,6 +415,7 @@ export default function Campaigns() {
           mode="edit"
           referenceId={editRefId}
           initial={editInitial ?? {}}
+          onRefresh={refreshCampaigns}
         />
       )}
     </div>
